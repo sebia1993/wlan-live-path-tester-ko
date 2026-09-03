@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.Windows"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.SelfTest", "tests\WlanLivePathTester.SelfTest\WlanLivePathTester.SelfTest.csproj", "{26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.WindowsSmoke", "tests\WlanLivePathTester.WindowsSmoke\WlanLivePathTester.WindowsSmoke.csproj", "{5B00F632-626B-45AC-AF50-2F3AC30FF105}"
+EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution
         Debug|Any CPU = Debug|Any CPU
@@ -32,6 +34,10 @@ Global
         {26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
         {26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
         {26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}.Release|Any CPU.Build.0 = Release|Any CPU
+        {5B00F632-626B-45AC-AF50-2F3AC30FF105}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {5B00F632-626B-45AC-AF50-2F3AC30FF105}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {5B00F632-626B-45AC-AF50-2F3AC30FF105}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {5B00F632-626B-45AC-AF50-2F3AC30FF105}.Release|Any CPU.Build.0 = Release|Any CPU
     EndGlobalSection
     GlobalSection(SolutionProperties) = preSolution
         HideSolutionNode = FALSE
