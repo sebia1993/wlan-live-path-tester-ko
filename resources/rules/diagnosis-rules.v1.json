@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "rulesetVersion": "0.1.0",
+  "thresholds": {
+    "weakRssiDbm": -75,
+    "minimumInternalMbps": 50,
+    "minimumExternalMbps": 20,
+    "commonExternalPathRatio": 0.35,
+    "siteVariationRatio": 2.0
+  },
+  "principles": [
+    "PHY 링크 속도와 실제 처리량을 분리한다.",
+    "프록시 내부 상태를 추정하지 않는다.",
+    "한 외부 사이트의 결과만으로 공통 외부망 장애를 판정하지 않는다.",
+    "근거가 부족하면 판단 불가로 처리한다."
+  ]
+}

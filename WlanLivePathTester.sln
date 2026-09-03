@@ -1,0 +1,39 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.App", "src\WlanLivePathTester.App\WlanLivePathTester.App.csproj", "{48C38AA0-ADCB-4D65-B8CF-FBB390665E1E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.Core", "src\WlanLivePathTester.Core\WlanLivePathTester.Core.csproj", "{583582AA-043D-49E3-8A1F-1687CFF6E563}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.Windows", "src\WlanLivePathTester.Windows\WlanLivePathTester.Windows.csproj", "{F14958AF-FD79-49D8-B6E7-DC7EA2B37BE9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.SelfTest", "tests\WlanLivePathTester.SelfTest\WlanLivePathTester.SelfTest.csproj", "{26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}"
+EndProject
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Any CPU = Debug|Any CPU
+        Release|Any CPU = Release|Any CPU
+    EndGlobalSection
+    GlobalSection(ProjectConfigurationPlatforms) = postSolution
+        {48C38AA0-ADCB-4D65-B8CF-FBB390665E1E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {48C38AA0-ADCB-4D65-B8CF-FBB390665E1E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {48C38AA0-ADCB-4D65-B8CF-FBB390665E1E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {48C38AA0-ADCB-4D65-B8CF-FBB390665E1E}.Release|Any CPU.Build.0 = Release|Any CPU
+        {583582AA-043D-49E3-8A1F-1687CFF6E563}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {583582AA-043D-49E3-8A1F-1687CFF6E563}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {583582AA-043D-49E3-8A1F-1687CFF6E563}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {583582AA-043D-49E3-8A1F-1687CFF6E563}.Release|Any CPU.Build.0 = Release|Any CPU
+        {F14958AF-FD79-49D8-B6E7-DC7EA2B37BE9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {F14958AF-FD79-49D8-B6E7-DC7EA2B37BE9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {F14958AF-FD79-49D8-B6E7-DC7EA2B37BE9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {F14958AF-FD79-49D8-B6E7-DC7EA2B37BE9}.Release|Any CPU.Build.0 = Release|Any CPU
+        {26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {26C2EAD0-586C-4F33-99DA-7F312D7DD5A8}.Release|Any CPU.Build.0 = Release|Any CPU
+    EndGlobalSection
+    GlobalSection(SolutionProperties) = preSolution
+        HideSolutionNode = FALSE
+    EndGlobalSection
+EndGlobal

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>WlanLivePathTester</AssemblyName>
+    <RootNamespace>WlanLivePathTester.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\WlanLivePathTester.Core\WlanLivePathTester.Core.csproj" />
+    <ProjectReference Include="..\WlanLivePathTester.Windows\WlanLivePathTester.Windows.csproj" />
+  </ItemGroup>
+</Project>
