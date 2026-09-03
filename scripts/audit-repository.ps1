@@ -7,7 +7,7 @@ Push-Location $root
 try {
     $tracked = @(git ls-files)
     if ($LASTEXITCODE -ne 0) {
-        throw "git ls-files 실행에 실패했습니다."
+        throw "git ls-files failed."
     }
 
     $forbiddenRoots = @("results/", "reports/", "logs/", "captures/", "temp/", "tmp/")
@@ -16,29 +16,32 @@ try {
         ".pfx", ".p12", ".pem", ".key", ".cer", ".crt", ".der"
     )
 
-    $violations = New-Object System.Collections.Generic.List[string]
+    $violations = New-Object "System.Collections.Generic.List[string]"
 
     foreach ($path in $tracked) {
-        $normalized = $path.Replace("\", "/")
+        $normalized = $path.Replace([char]92, [char]47)
 
-        if ($forbiddenRoots | Where-Object {
-                $normalized.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase)
-            }) {
-            $violations.Add("금지된 산출물 경로: $path")
+        foreach ($prefix in $forbiddenRoots) {
+            if ($normalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                [void]$violations.Add("Forbidden generated-output path: $path")
+                break
+            }
         }
 
         $extension = [System.IO.Path]::GetExtension($path)
-        if ($forbiddenExtensions -contains $extension.ToLowerInvariant()) {
-            $violations.Add("금지된 파일 형식: $path")
+        if ($extension -and $forbiddenExtensions.Contains($extension.ToLowerInvariant())) {
+            [void]$violations.Add("Forbidden file type: $path")
         }
 
-        if ($normalized -match "^config/(targets|.+\.(local|private))\.json$") {
-            $violations.Add("실제 또는 로컬 설정 파일 커밋 금지: $path")
+        if ($normalized -match '^config/(targets|.+\.(local|private))\.json$') {
+            [void]$violations.Add("Local or real target configuration must not be committed: $path")
         }
     }
 
     if ($violations.Count -gt 0) {
-        $violations | ForEach-Object { Write-Error $_ }
+        foreach ($violation in $violations) {
+            Write-Error $violation
+        }
         exit 1
     }
 
