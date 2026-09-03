@@ -1,0 +1,29 @@
+name: 기능 제안
+description: 제품 경계 안의 기능을 제안합니다.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 해결하려는 문제
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안 기능
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: 보안 경계 확인
+      options:
+        - label: 외부 업로드·텔레메트리·자동 업데이트가 필요하지 않습니다.
+          required: true
+        - label: AI 또는 외부 분석 API가 필요하지 않습니다.
+          required: true
+        - label: 외부 통신이 있다면 사용자 시작 HEAD/GET 측정 범위입니다.
+          required: true
