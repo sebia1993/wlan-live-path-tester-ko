@@ -43,7 +43,15 @@ public sealed record WlanSnapshot(
     uint? Channel,
     string? PhyType,
     ulong? ReceiveLinkSpeedBps,
-    ulong? TransmitLinkSpeedBps);
+    ulong? TransmitLinkSpeedBps,
+    string? InterfaceDescription = null,
+    string? InterfaceState = null,
+    int? SignalQualityPercent = null,
+    uint? CenterFrequencyMhz = null,
+    string? Authentication = null,
+    string? Cipher = null,
+    uint? NativeErrorCode = null,
+    string? ReadError = null);
 
 public sealed record DownloadMeasurement(
     string TargetName,
