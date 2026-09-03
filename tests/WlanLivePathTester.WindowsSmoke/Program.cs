@@ -1,3 +1,4 @@
+using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Windows.Wlan;
 
 namespace WlanLivePathTester.WindowsSmoke;
@@ -10,6 +11,19 @@ internal static class Program
         {
             Console.Error.WriteLine("Windows WLAN API smoke test must run on Windows.");
             return 2;
+        }
+
+        WlanReadResult stoppedService = new(
+            WlanReadStatus.NativeError,
+            Array.Empty<WlanSnapshot>(),
+            1062,
+            "Synthetic native error");
+
+        if (stoppedService.Status != WlanReadStatus.ServiceNotRunning
+            || !stoppedService.Message.Contains("WlanSvc", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine("Native error 1062 was not normalized to ServiceNotRunning.");
+            return 1;
         }
 
         for (int attempt = 1; attempt <= 2; attempt++)
