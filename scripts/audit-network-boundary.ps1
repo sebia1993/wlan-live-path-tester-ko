@@ -56,9 +56,9 @@ if (Test-Path -LiteralPath $configExample) {
     $urls = [regex]::Matches($example, 'https?://([^/"\s]+)')
 
     foreach ($urlMatch in $urls) {
-        $host = $urlMatch.Groups[1].Value.Split(':')[0]
-        if (-not $allowedExampleHosts.Contains($host)) {
-            [void]$violations.Add("Example configuration contains a non-documentation host: $host")
+        $targetHost = $urlMatch.Groups[1].Value.Split(':')[0]
+        if (-not $allowedExampleHosts.Contains($targetHost)) {
+            [void]$violations.Add("Example configuration contains a non-documentation host: $targetHost")
         }
     }
 }
