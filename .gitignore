@@ -1,0 +1,69 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+artifacts/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Local configuration and sensitive environment data
+config/targets.json
+config/*.local.json
+config/*.private.json
+*.secrets.json
+.env
+.env.*
+!.env.example
+
+# Runtime output
+results/
+reports/
+logs/
+captures/
+temp/
+tmp/
+*.log
+*.csv
+*.html
+*.jsonl
+*.dmp
+*.etl
+*.evtx
+*.har
+
+# Network captures and packet data
+*.pcap
+*.pcapng
+*.cap
+*.erf
+
+# Certificates and credentials
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+*.crt
+*.der
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Package/release output
+*.nupkg
+*.snupkg
+*.zip
+*.7z
+*.msi
+*.msix
+publish/
