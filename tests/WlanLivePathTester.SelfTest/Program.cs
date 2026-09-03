@@ -1,5 +1,6 @@
 using WlanLivePathTester.Core.Configuration;
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.Proxy;
 using WlanLivePathTester.Core.Rules;
 using WlanLivePathTester.Core.Security;
 using WlanLivePathTester.Core.Wlan;
@@ -21,7 +22,15 @@ internal static class Program
             ("2.4 GHz 채널 변환", Converts24GhzChannel),
             ("5 GHz 채널 변환", Converts5GhzChannel),
             ("6 GHz 채널 변환", Converts6GhzChannel),
-            ("알 수 없는 주파수 거부", RejectsUnknownFrequency)
+            ("알 수 없는 주파수 거부", RejectsUnknownFrequency),
+            ("수동 공통 프록시 선택", SelectsCatchAllManualProxy),
+            ("프로토콜별 프록시 선택", SelectsProtocolSpecificProxy),
+            ("미설정 프로토콜 DIRECT 처리", UsesDirectWhenSchemeIsNotConfigured),
+            ("로컬 이름 바이패스", BypassesLocalHostName),
+            ("와일드카드 도메인 바이패스", BypassesWildcardDomain),
+            ("프록시와 DIRECT fallback 파싱", ParsesProxyWithDirectFallback),
+            ("잘못된 프록시 설정 판단 불가", RejectsMalformedProxyConfiguration),
+            ("내부·외부 기대 경로 판정", EvaluatesProxyPathExpectation)
         ];
 
         int failures = 0;
@@ -202,6 +211,111 @@ internal static class Program
         Assert(
             WlanChannelCalculator.FromCenterFrequencyMhz(3000) is null,
             "지원하지 않는 주파수는 채널을 만들지 않아야 합니다.");
+    }
+
+    private static void SelectsCatchAllManualProxy()
+    {
+        ProxySelection selection = ProxyDirectiveParser.SelectManual(
+            new Uri("https://service.example.invalid/resource"),
+            "proxy.example.invalid:8080",
+            bypassList: null);
+
+        Assert(selection.RouteKind == ProxyRouteKind.Proxy, "수동 프록시를 선택해야 합니다.");
+        Assert(selection.ProxyCandidateCount == 1, "프록시 후보가 하나여야 합니다.");
+        Assert(
+            selection.ProxyUris[0] == "http://proxy.example.invalid:8080",
+            "프록시 주소를 정규화해야 합니다.");
+    }
+
+    private static void SelectsProtocolSpecificProxy()
+    {
+        ProxySelection selection = ProxyDirectiveParser.SelectManual(
+            new Uri("https://service.example.invalid/resource"),
+            "http=proxy-http.example.invalid:8080;https=proxy-https.example.invalid:8443",
+            bypassList: null);
+
+        Assert(selection.RouteKind == ProxyRouteKind.Proxy, "HTTPS 프록시를 선택해야 합니다.");
+        Assert(
+            selection.ProxyUris.Single() == "http://proxy-https.example.invalid:8443",
+            "대상 URL 스킴의 프록시만 선택해야 합니다.");
+    }
+
+    private static void UsesDirectWhenSchemeIsNotConfigured()
+    {
+        ProxySelection selection = ProxyDirectiveParser.SelectManual(
+            new Uri("https://service.example.invalid/resource"),
+            "http=proxy-http.example.invalid:8080",
+            bypassList: null);
+
+        Assert(selection.RouteKind == ProxyRouteKind.Direct, "HTTPS 설정이 없으면 DIRECT여야 합니다.");
+    }
+
+    private static void BypassesLocalHostName()
+    {
+        ProxySelection selection = ProxyDirectiveParser.SelectManual(
+            new Uri("http://intranet/resource"),
+            "proxy.example.invalid:8080",
+            "<local>");
+
+        Assert(selection.RouteKind == ProxyRouteKind.Direct, "로컬 이름은 DIRECT여야 합니다.");
+        Assert(selection.WasBypassed, "바이패스에 의한 DIRECT임을 기록해야 합니다.");
+    }
+
+    private static void BypassesWildcardDomain()
+    {
+        ProxySelection selection = ProxyDirectiveParser.SelectManual(
+            new Uri("https://app.corp.invalid/resource"),
+            "proxy.example.invalid:8080",
+            "*.corp.invalid");
+
+        Assert(selection.RouteKind == ProxyRouteKind.Direct, "와일드카드 도메인은 바이패스해야 합니다.");
+        Assert(selection.WasBypassed, "와일드카드 바이패스를 기록해야 합니다.");
+    }
+
+    private static void ParsesProxyWithDirectFallback()
+    {
+        ProxySelection selection = ProxyDirectiveParser.SelectAutoProxyList(
+            new Uri("https://service.example.invalid/resource"),
+            "PROXY proxy-a.example.invalid:8080; PROXY proxy-b.example.invalid:8080; DIRECT");
+
+        Assert(selection.RouteKind == ProxyRouteKind.Proxy, "첫 경로는 프록시여야 합니다.");
+        Assert(selection.ProxyCandidateCount == 2, "프록시 후보가 두 개여야 합니다.");
+        Assert(selection.HasDirectFallback, "DIRECT fallback을 기록해야 합니다.");
+    }
+
+    private static void RejectsMalformedProxyConfiguration()
+    {
+        ProxySelection selection = ProxyDirectiveParser.SelectManual(
+            new Uri("https://service.example.invalid/resource"),
+            "https=://bad-proxy",
+            bypassList: null);
+
+        Assert(selection.RouteKind == ProxyRouteKind.Unknown, "잘못된 설정은 판단 불가여야 합니다.");
+        Assert(selection.InvalidDirectiveCount == 1, "잘못된 지시문 수를 기록해야 합니다.");
+    }
+
+    private static void EvaluatesProxyPathExpectation()
+    {
+        Assert(
+            ProxyRouteExpectationEvaluator.Evaluate(
+                NetworkPathKind.Internal,
+                ProxyRouteKind.Direct) == ProxyPathExpectation.Match,
+            "내부망 DIRECT는 기대 경로 일치여야 합니다.");
+        Assert(
+            ProxyRouteExpectationEvaluator.Evaluate(
+                NetworkPathKind.External,
+                ProxyRouteKind.Proxy) == ProxyPathExpectation.Match,
+            "외부망 PROXY는 기대 경로 일치여야 합니다.");
+        Assert(
+            ProxyRouteExpectationEvaluator.Evaluate(
+                NetworkPathKind.External,
+                ProxyRouteKind.Direct) == ProxyPathExpectation.Mismatch,
+            "외부망 DIRECT는 기대 경로 불일치여야 합니다.");
+        Assert(
+            ProxyRouteExpectationEvaluator.Evaluate(
+                NetworkPathKind.Internal,
+                ProxyRouteKind.Unknown) == ProxyPathExpectation.Unknown,
+            "판단 불가 경로는 기대 여부도 판단 불가여야 합니다.");
     }
 
     private static MeasurementTargetDefinition CreateExternalTarget(string url) =>

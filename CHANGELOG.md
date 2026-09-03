@@ -16,8 +16,17 @@
 - 무선 인증·암호화 방식과 부분 권한 실패 상태 표시
 - 2.4 GHz, 5 GHz, 6 GHz 중심 주파수의 채널 변환 자체 점검
 - Windows runner에서 Native WLAN API를 실제 호출하는 반복 smoke test
+- 대상 URL별 수동 프록시·바이패스·WPAD·PAC 경로 판정
+- 프로토콜별 프록시, `<local>`, 와일드카드, 포트 바이패스 파서
+- 다중 프록시와 DIRECT fallback 표시
+- 내부망 DIRECT·외부망 PROXY 기대 경로 비교
+- 프록시 주소와 PAC URL을 표시하지 않는 WPF 경로 확인 화면
+- 합성 프록시 설정을 사용하는 결정론적 자체 점검 8개
 
 ### Changed
 
 - WLAN AutoConfig 서비스 미실행 오류 1062를 별도 `ServiceNotRunning` 상태와 한국어 조치 문구로 정규화
 - GitHub Actions를 Node 24 호환 v5 공식 commit SHA로 고정
+- 현재 사용자 프록시 설정의 public API를 마스킹 결과 전용으로 축소
+- WPAD → 명시적 PAC → 수동 프록시 순서의 제한적인 fallback 정책 적용
+- PAC/WPAD 로그인 실패에서만 Windows 자동 로그온을 한 번 재시도하도록 제한

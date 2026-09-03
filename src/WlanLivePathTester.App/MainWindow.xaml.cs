@@ -1,5 +1,6 @@
 using System.Text;
 using System.Windows;
+using System.Windows.Media;
 using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Core.Wlan;
 using WlanLivePathTester.Windows.Proxy;
@@ -73,6 +74,105 @@ public partial class MainWindow : Window
             ProxyResultText.Text = $"확인 중 오류가 발생했습니다: {exception.Message}";
         }
     }
+
+    private async void OnResolveProxyRouteClick(object sender, RoutedEventArgs e)
+    {
+        string url = ProxyTargetUrlTextBox.Text.Trim();
+        NetworkPathKind expectedPath = ProxyExpectedPathComboBox.SelectedIndex == 1
+            ? NetworkPathKind.Internal
+            : NetworkPathKind.External;
+
+        object? previousContent = ResolveProxyRouteButton.Content;
+        ResolveProxyRouteButton.IsEnabled = false;
+        ResolveProxyRouteButton.Content = "확인 중...";
+        ProxyRouteResultText.Foreground = Brushes.DarkSlateGray;
+        ProxyRouteResultText.Text = "현재 사용자 프록시 정책을 확인하고 있습니다.";
+
+        try
+        {
+            ProxyRouteResolution result = await Task.Run(
+                () => ProxyRouteResolver.Resolve(url, expectedPath));
+
+            ProxyRouteResultText.Foreground = result switch
+            {
+                { IsSuccess: true, Expectation: ProxyPathExpectation.Match } => Brushes.DarkGreen,
+                { IsSuccess: true, Expectation: ProxyPathExpectation.Mismatch } => Brushes.DarkOrange,
+                { IsSuccess: true } => Brushes.DarkSlateGray,
+                _ => Brushes.DarkRed
+            };
+
+            StringBuilder builder = new();
+            builder.AppendLine($"상태: {FormatProxyStatus(result.Status)}");
+            builder.AppendLine($"설정 출처: {FormatProxySource(result.Source)}");
+            builder.AppendLine($"판정 경로: {result.SafeRouteSummary}");
+            builder.AppendLine($"예상 경로: {FormatExpectedPath(expectedPath)}");
+            builder.AppendLine($"기대 경로 일치: {FormatExpectation(result.Expectation)}");
+            builder.AppendLine($"PAC/WPAD 네트워크 조회: {(result.NetworkLookupPerformed ? "수행됨" : "수행 안 함")}");
+            builder.AppendLine($"자동 로그온 재시도: {(result.AutoLogonRetried ? "수행됨" : "수행 안 함")}");
+
+            if (result.InvalidDirectiveCount > 0)
+            {
+                builder.AppendLine($"제외한 지시문: {result.InvalidDirectiveCount}개");
+            }
+
+            if (result.Win32ErrorCode is int errorCode)
+            {
+                builder.AppendLine($"Win32 오류 코드: {errorCode}");
+            }
+
+            builder.AppendLine($"설명: {result.Message}");
+            ProxyRouteResultText.Text = builder.ToString().TrimEnd();
+        }
+        catch (Exception exception)
+        {
+            ProxyRouteResultText.Foreground = Brushes.DarkRed;
+            ProxyRouteResultText.Text = $"프록시 경로 확인 중 오류가 발생했습니다: {exception.Message}";
+        }
+        finally
+        {
+            ResolveProxyRouteButton.Content = previousContent;
+            ResolveProxyRouteButton.IsEnabled = true;
+        }
+    }
+
+    private static string FormatProxyStatus(ProxyResolutionStatus status) =>
+        status switch
+        {
+            ProxyResolutionStatus.Success => "성공",
+            ProxyResolutionStatus.InvalidUrl => "URL 오류",
+            ProxyResolutionStatus.UnsupportedPlatform => "지원하지 않는 운영체제",
+            ProxyResolutionStatus.ConfigurationReadFailed => "프록시 설정 읽기 실패",
+            ProxyResolutionStatus.ConfigurationInvalid => "프록시 설정 해석 실패",
+            ProxyResolutionStatus.AutoProxyAuthenticationFailed => "PAC/WPAD 인증 실패",
+            ProxyResolutionStatus.AutoProxyFailed => "PAC/WPAD 판정 실패",
+            ProxyResolutionStatus.TimedOut => "시간 초과",
+            _ => "Windows API 오류"
+        };
+
+    private static string FormatProxySource(ProxyConfigurationSource source) =>
+        source switch
+        {
+            ProxyConfigurationSource.None => "설정 없음",
+            ProxyConfigurationSource.Manual => "수동 프록시 또는 바이패스",
+            ProxyConfigurationSource.Wpad => "WPAD 자동 검색",
+            ProxyConfigurationSource.Pac => "명시적 PAC",
+            ProxyConfigurationSource.WpadThenPac => "WPAD 실패 후 명시적 PAC",
+            ProxyConfigurationSource.ManualFallback => "PAC/WPAD 실패 후 수동 설정",
+            _ => "확인 불가"
+        };
+
+    private static string FormatExpectation(ProxyPathExpectation expectation) =>
+        expectation switch
+        {
+            ProxyPathExpectation.Match => "일치",
+            ProxyPathExpectation.Mismatch => "불일치",
+            _ => "판단 불가"
+        };
+
+    private static string FormatExpectedPath(NetworkPathKind pathKind) =>
+        pathKind == NetworkPathKind.Internal
+            ? "내부망 — DIRECT 예상"
+            : "외부망 — PROXY 예상";
 
     private static string FormatDbm(int? value) =>
         value is int rssi ? $"{rssi} dBm" : "확인 불가";
