@@ -8,42 +8,23 @@ namespace WlanLivePathTester.Windows.Proxy;
 [SupportedOSPlatform("windows")]
 public static class CurrentUserProxySettingsReader
 {
-    public static CurrentUserProxySettings Read(bool includeSensitiveValues = false)
-    {
-        if (!WinHttpNative.WinHttpGetIEProxyConfigForCurrentUser(
-                out WinHttpNative.CurrentUserIeProxyConfig native))
-        {
-            int error = Marshal.GetLastWin32Error();
-            return new CurrentUserProxySettings(
-                ReadSucceeded: false,
-                Win32Error: error,
-                AutoDetectEnabled: false,
-                AutoConfigUrl: null,
-                ManualProxy: null,
-                BypassList: null);
-        }
+    private const int ErrorFileNotFound = 2;
 
-        try
-        {
-            return new CurrentUserProxySettings(
-                ReadSucceeded: true,
-                Win32Error: null,
-                AutoDetectEnabled: native.AutoDetect != 0,
-                AutoConfigUrl: ReadAndMask(native.AutoConfigUrl, includeSensitiveValues),
-                ManualProxy: ReadAndMask(native.Proxy, includeSensitiveValues),
-                BypassList: ReadAndMask(native.ProxyBypass, includeSensitiveValues));
-        }
-        finally
-        {
-            Free(native.AutoConfigUrl);
-            Free(native.Proxy);
-            Free(native.ProxyBypass);
-        }
+    public static CurrentUserProxySettings Read()
+    {
+        CurrentUserProxyConfiguration raw = ReadRaw();
+        return new CurrentUserProxySettings(
+            ReadSucceeded: raw.ReadSucceeded,
+            Win32Error: raw.Win32Error,
+            AutoDetectEnabled: raw.AutoDetectEnabled,
+            AutoConfigUrl: MaskIfPresent(raw.AutoConfigUrl),
+            ManualProxy: MaskIfPresent(raw.ManualProxy),
+            BypassList: MaskIfPresent(raw.BypassList));
     }
 
-    public static CurrentUserProxySettings ReadOrThrow(bool includeSensitiveValues = false)
+    public static CurrentUserProxySettings ReadOrThrow()
     {
-        CurrentUserProxySettings settings = Read(includeSensitiveValues);
+        CurrentUserProxySettings settings = Read();
         if (!settings.ReadSucceeded)
         {
             throw new Win32Exception(
@@ -54,7 +35,51 @@ public static class CurrentUserProxySettingsReader
         return settings;
     }
 
-    private static string? ReadAndMask(nint pointer, bool includeSensitiveValues)
+    internal static CurrentUserProxyConfiguration ReadRaw()
+    {
+        if (!WinHttpNative.WinHttpGetIEProxyConfigForCurrentUser(
+                out WinHttpNative.CurrentUserIeProxyConfig native))
+        {
+            int error = Marshal.GetLastWin32Error();
+            if (error == ErrorFileNotFound)
+            {
+                return new CurrentUserProxyConfiguration(
+                    ReadSucceeded: true,
+                    Win32Error: null,
+                    AutoDetectEnabled: false,
+                    AutoConfigUrl: null,
+                    ManualProxy: null,
+                    BypassList: null);
+            }
+
+            return new CurrentUserProxyConfiguration(
+                ReadSucceeded: false,
+                Win32Error: error,
+                AutoDetectEnabled: false,
+                AutoConfigUrl: null,
+                ManualProxy: null,
+                BypassList: null);
+        }
+
+        try
+        {
+            return new CurrentUserProxyConfiguration(
+                ReadSucceeded: true,
+                Win32Error: null,
+                AutoDetectEnabled: native.AutoDetect != 0,
+                AutoConfigUrl: CopyString(native.AutoConfigUrl),
+                ManualProxy: CopyString(native.Proxy),
+                BypassList: CopyString(native.ProxyBypass));
+        }
+        finally
+        {
+            Free(native.AutoConfigUrl);
+            Free(native.Proxy);
+            Free(native.ProxyBypass);
+        }
+    }
+
+    private static string? CopyString(nint pointer)
     {
         if (pointer == nint.Zero)
         {
@@ -62,13 +87,11 @@ public static class CurrentUserProxySettingsReader
         }
 
         string? value = Marshal.PtrToStringUni(pointer);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        return includeSensitiveValues ? value : "[설정됨]";
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
+
+    private static string? MaskIfPresent(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : "[설정됨]";
 
     private static void Free(nint pointer)
     {
