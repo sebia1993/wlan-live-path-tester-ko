@@ -42,26 +42,32 @@ Windows 11에서 현재 무선랜 연결 상태, 내부망 다운로드 성능, 
 
 ## 현재 상태
 
-**M0 저장소 기반은 완료됐고 M1 Native WLAN 상태 수집을 구현·검증 중입니다.**
+**M0 저장소 기반과 M1 Native WLAN 상태 수집은 완료됐고, M2 대상 URL별 프록시 경로 판정을 구현했습니다.**
 
 현재 코드에 포함된 기능:
 
 - 외부 통신 없이 Windows Native WLAN API로 무선 인터페이스 열거
 - 현재 SSID, BSSID, RSSI, 신호 품질, 채널, 중심 주파수
 - PHY 규격, Rx/Tx PHY 링크 속도, 인증·암호화 방식
-- 무선 미연결, 인터페이스 없음, 접근 거부, 부분 정보 실패 구분
+- 무선 미연결, 인터페이스 없음, 접근 거부, WLAN 서비스 미실행, 부분 정보 실패 구분
 - 현재 사용자 프록시 설정의 존재 여부를 로컬 WinHTTP API로 확인
+- 대상 URL별 수동 프록시·바이패스·WPAD·PAC 경로 판정
+- WPAD 실패 후 명시적 PAC, 이후 수동 프록시로 제한적인 fallback
+- PAC/WPAD 취득 중 Windows 통합 인증이 필요할 때 한 번만 자동 로그온 재시도
+- 내부망은 DIRECT, 외부망은 PROXY를 기대하는 경로 일치 판정
+- 실제 프록시 주소와 PAC URL을 표시하지 않는 WPF 결과 화면
 - 실제 사내 값이 없는 합성 자체 점검과 Windows CI
+
+프록시 경로 확인은 사용자가 버튼을 눌렀을 때만 실행됩니다. 수동 설정만 있으면 로컬 판정으로 끝나지만, PAC/WPAD 환경에서는 회사 내부 PAC 파일 조회·WPAD 탐색·PAC 스크립트가 요구하는 DNS 확인이 발생할 수 있습니다. 이 단계에서는 대상 외부 사이트의 파일 본문을 내려받지 않습니다.
 
 아직 구현되지 않은 기능:
 
-- 대상 URL별 PAC/WPAD 프록시 경로 판정
-- HTTP 407 Negotiate/NTLM 인증
+- 실제 HTTP 요청의 `407 Proxy Authentication Required` 처리
 - 내부·외부 다운로드 처리량 측정
 - 브라우저 다운로드 처리량 관찰
 - 완성형 로컬 보고서와 정식 릴리스
 
-현재 WLAN 구현은 GitHub Windows 빌드로 구조를 검증하지만, 실제 Windows 11 무선 어댑터·위치 권한·회사 GPO/EDR 환경의 동작은 별도 수동 검증이 필요합니다. 진행 상황은 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md)에 기록합니다.
+현재 WLAN 및 프록시 구현은 GitHub Windows 빌드로 코드 경계를 검증했지만, 실제 Windows 11 무선 어댑터·회사 PAC/WPAD·GPO/EDR 환경의 동작은 별도 수동 검증이 필요합니다. 진행 상황은 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md)에 기록합니다.
 
 ## 저장소 구조
 
@@ -72,7 +78,8 @@ wlan-live-path-tester-ko/
 │  ├─ WlanLivePathTester.Core/      측정 모델·검증·판정 규칙
 │  └─ WlanLivePathTester.Windows/   WinHTTP·WLAN·IP Helper 경계
 ├─ tests/
-│  └─ WlanLivePathTester.SelfTest/  외부 패키지 없는 결정론적 자체 점검
+│  ├─ WlanLivePathTester.SelfTest/  외부 패키지 없는 결정론적 자체 점검
+│  └─ WlanLivePathTester.WindowsSmoke/ Windows API 로컬 smoke test
 ├─ config/
 │  └─ targets.example.json          커밋 가능한 합성 예시
 ├─ resources/
@@ -89,6 +96,7 @@ wlan-live-path-tester-ko/
 dotnet restore .\WlanLivePathTester.sln
 dotnet build .\WlanLivePathTester.sln -c Release --no-restore
 dotnet run --project .\tests\WlanLivePathTester.SelfTest\WlanLivePathTester.SelfTest.csproj -c Release --no-build
+dotnet run --project .\tests\WlanLivePathTester.WindowsSmoke\WlanLivePathTester.WindowsSmoke.csproj -c Release --no-build
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\audit-repository.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\audit-network-boundary.ps1
 ```
