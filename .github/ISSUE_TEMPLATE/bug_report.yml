@@ -1,0 +1,44 @@
+name: 버그 보고
+description: 재현 가능한 프로그램 오류를 보고합니다.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        실제 사내 URL, 프록시 주소, PAC URL, PCAP, 로그 원문, SSID/BSSID, 자격 증명을 첨부하지 마십시오.
+  - type: textarea
+    id: summary
+    attributes:
+      label: 문제 요약
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 절차
+      description: 민감정보를 합성값으로 바꿔 작성하십시오.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 버전 또는 커밋
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역
+      options:
+        - WLAN 상태
+        - 프록시/PAC/WPAD
+        - 내부망 측정
+        - 외부망 측정
+        - 브라우저 관찰
+        - 보고서
+        - 빌드/배포
+        - 기타
+    validations:
+      required: true
