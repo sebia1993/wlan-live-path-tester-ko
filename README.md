@@ -42,15 +42,26 @@ Windows 11에서 현재 무선랜 연결 상태, 내부망 다운로드 성능, 
 
 ## 현재 상태
 
-현재는 **M0 저장소 기반 구축 단계**입니다.
+**M0 저장소 기반은 완료됐고 M1 Native WLAN 상태 수집을 구현·검증 중입니다.**
 
-- 솔루션 및 프로젝트 골격
-- 네트워크·개인정보 경계 문서
-- 합성 데이터 기반 자체 점검
-- Windows CI
-- 현재 사용자 프록시 설정을 로컬에서 확인하는 최소 WinHTTP 경계
+현재 코드에 포함된 기능:
 
-실제 WLAN 수집, PAC/WPAD 대상별 경로 확인, 내부·외부 다운로드 속도 측정은 후속 마일스톤에서 구현합니다. 진행 상황은 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md)에 기록합니다.
+- 외부 통신 없이 Windows Native WLAN API로 무선 인터페이스 열거
+- 현재 SSID, BSSID, RSSI, 신호 품질, 채널, 중심 주파수
+- PHY 규격, Rx/Tx PHY 링크 속도, 인증·암호화 방식
+- 무선 미연결, 인터페이스 없음, 접근 거부, 부분 정보 실패 구분
+- 현재 사용자 프록시 설정의 존재 여부를 로컬 WinHTTP API로 확인
+- 실제 사내 값이 없는 합성 자체 점검과 Windows CI
+
+아직 구현되지 않은 기능:
+
+- 대상 URL별 PAC/WPAD 프록시 경로 판정
+- HTTP 407 Negotiate/NTLM 인증
+- 내부·외부 다운로드 처리량 측정
+- 브라우저 다운로드 처리량 관찰
+- 완성형 로컬 보고서와 정식 릴리스
+
+현재 WLAN 구현은 GitHub Windows 빌드로 구조를 검증하지만, 실제 Windows 11 무선 어댑터·위치 권한·회사 GPO/EDR 환경의 동작은 별도 수동 검증이 필요합니다. 진행 상황은 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md)에 기록합니다.
 
 ## 저장소 구조
 
@@ -91,7 +102,7 @@ SHA256SUMS.txt
 THIRD_PARTY_NOTICES.md
 ```
 
-초기 검증이 끝나기 전에는 정식 릴리스를 만들지 않습니다.
+실제 Windows 11 수동 검증과 핵심 측정 기능이 완료되기 전에는 정식 릴리스를 만들지 않습니다.
 
 ## 라이선스
 

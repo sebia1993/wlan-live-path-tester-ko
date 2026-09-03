@@ -2,6 +2,7 @@ using WlanLivePathTester.Core.Configuration;
 using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Core.Rules;
 using WlanLivePathTester.Core.Security;
+using WlanLivePathTester.Core.Wlan;
 
 namespace WlanLivePathTester.SelfTest;
 
@@ -16,7 +17,11 @@ internal static class Program
             ("외부 대상의 사설 IP 거부", RejectsPrivateExternalAddress),
             ("합성 설정 로드", LoadsSyntheticConfiguration),
             ("프록시 인증 실패 판정", DetectsProxyAuthenticationFailure),
-            ("공통 외부 경로 저하 판정", DetectsCommonExternalPathDegradation)
+            ("공통 외부 경로 저하 판정", DetectsCommonExternalPathDegradation),
+            ("2.4 GHz 채널 변환", Converts24GhzChannel),
+            ("5 GHz 채널 변환", Converts5GhzChannel),
+            ("6 GHz 채널 변환", Converts6GhzChannel),
+            ("알 수 없는 주파수 거부", RejectsUnknownFrequency)
         ];
 
         int failures = 0;
@@ -163,6 +168,40 @@ internal static class Program
         Assert(
             findings.Any(item => item.Code == "COMMON_EXTERNAL_PATH_DEGRADED"),
             "복수 외부 대상의 공통 경로 저하 코드가 필요합니다.");
+    }
+
+    private static void Converts24GhzChannel()
+    {
+        Assert(
+            WlanChannelCalculator.FromCenterFrequencyMhz(2412) == 1,
+            "2412 MHz는 채널 1이어야 합니다.");
+        Assert(
+            WlanChannelCalculator.FromCenterFrequencyMhz(2484) == 14,
+            "2484 MHz는 채널 14여야 합니다.");
+    }
+
+    private static void Converts5GhzChannel()
+    {
+        Assert(
+            WlanChannelCalculator.FromCenterFrequencyMhz(5180) == 36,
+            "5180 MHz는 채널 36이어야 합니다.");
+    }
+
+    private static void Converts6GhzChannel()
+    {
+        Assert(
+            WlanChannelCalculator.FromCenterFrequencyMhz(5955) == 1,
+            "5955 MHz는 6 GHz 채널 1이어야 합니다.");
+        Assert(
+            WlanChannelCalculator.FromCenterFrequencyMhz(5935) == 2,
+            "5935 MHz는 6 GHz 채널 2여야 합니다.");
+    }
+
+    private static void RejectsUnknownFrequency()
+    {
+        Assert(
+            WlanChannelCalculator.FromCenterFrequencyMhz(3000) is null,
+            "지원하지 않는 주파수는 채널을 만들지 않아야 합니다.");
     }
 
     private static MeasurementTargetDefinition CreateExternalTarget(string url) =>
