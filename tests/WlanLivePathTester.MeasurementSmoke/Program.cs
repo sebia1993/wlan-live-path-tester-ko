@@ -28,7 +28,7 @@ internal static class Program
             ("외부 프록시 다중 스트림 총량 상한", MeasuresExternalProxyWithTwoStreams),
             ("사전 취소 처리", HandlesPreCanceledMeasurement),
             ("내부 프록시 필수 설정 차단", RejectsInvalidInternalProxySemantics),
-            ("WinHTTP 수신 시간 초과", DetectsReceiveTimeout)
+            ("WinHTTP 본문 수신 시간 초과", DetectsReceiveTimeout)
         ];
 
         int failures = 0;
@@ -314,12 +314,13 @@ internal static class Program
             listener,
             expectedRequests: 1,
             _ => new SyntheticResponse(
-                StatusCode: 204,
-                Reason: "No Content",
-                Body: Array.Empty<byte>(),
-                DeclaredLength: 0,
+                StatusCode: 200,
+                Reason: "OK",
+                Body: new byte[1],
+                DeclaredLength: 1,
                 ExtraHeaders: null,
-                DelayBeforeResponse: TimeSpan.FromSeconds(2)),
+                DelayBeforeResponse: TimeSpan.Zero,
+                DelayBeforeBody: TimeSpan.FromSeconds(2)),
             timeout.Token);
 
         try
@@ -328,14 +329,14 @@ internal static class Program
                 new WinHttpRequestOptions(
                     Url: $"http://127.0.0.1:{port}/timeout",
                     ExpectedPath: NetworkPathKind.Internal,
-                    Method: WinHttpRequestMethod.Head,
+                    Method: WinHttpRequestMethod.Get,
                     TimeoutMilliseconds: 1000,
-                    MaxResponseBytes: 0,
+                    MaxResponseBytes: 1,
                     RequireExpectedPath: true),
                 proxyEndpoint: null);
 
             Assert(result.Status == WinHttpRequestStatus.TimedOut,
-                $"수신 제한 시간을 초과하면 TimedOut이어야 합니다: {result.Status}");
+                $"본문 수신 제한 시간을 초과하면 TimedOut이어야 합니다: {result.Status}");
 
             await server.WaitAsync(TimeSpan.FromSeconds(8));
         }
@@ -424,16 +425,26 @@ internal static class Program
             try
             {
                 await stream.WriteAsync(headerBytes, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+
+                if (response.DelayBeforeBody > TimeSpan.Zero)
+                {
+                    await Task.Delay(response.DelayBeforeBody, cancellationToken);
+                }
+
                 if (response.Body.Length > 0)
                 {
                     await stream.WriteAsync(response.Body, cancellationToken);
+                    await stream.FlushAsync(cancellationToken);
                 }
-
-                await stream.FlushAsync(cancellationToken);
             }
             catch (IOException)
             {
                 // A capped or timed-out client may close before the server finishes.
+            }
+            catch (SocketException)
+            {
+                // A capped or timed-out client may reset the loopback connection.
             }
         }
     }
@@ -489,7 +500,8 @@ internal static class Program
         byte[] Body,
         int DeclaredLength,
         IReadOnlyDictionary<string, string>? ExtraHeaders,
-        TimeSpan DelayBeforeResponse)
+        TimeSpan DelayBeforeResponse,
+        TimeSpan DelayBeforeBody)
     {
         internal static SyntheticResponse Success(
             byte[] body,
@@ -501,6 +513,7 @@ internal static class Program
                 body,
                 declaredLength,
                 extraHeaders,
+                TimeSpan.Zero,
                 TimeSpan.Zero);
 
         internal static SyntheticResponse Redirect(string location) =>
@@ -513,6 +526,7 @@ internal static class Program
                 {
                     ["Location"] = location
                 },
+                TimeSpan.Zero,
                 TimeSpan.Zero);
 
         internal static SyntheticResponse NotFound() =>
@@ -522,6 +536,7 @@ internal static class Program
                 Array.Empty<byte>(),
                 0,
                 null,
+                TimeSpan.Zero,
                 TimeSpan.Zero);
     }
 }
