@@ -42,7 +42,7 @@ Windows 11에서 현재 무선랜 연결 상태, 내부망 다운로드 성능, 
 
 ## 현재 상태
 
-**M0 저장소 기반과 M1 Native WLAN 상태 수집은 완료됐고, M2 대상 URL별 프록시 경로 판정을 구현했습니다.**
+**M0 저장소 기반과 M1 Native WLAN 상태 수집을 완료했고, M2 프록시 경로 판정 및 407 통합 인증 전송 계층을 구현했습니다.**
 
 현재 코드에 포함된 기능:
 
@@ -55,19 +55,24 @@ Windows 11에서 현재 무선랜 연결 상태, 내부망 다운로드 성능, 
 - WPAD 실패 후 명시적 PAC, 이후 수동 프록시로 제한적인 fallback
 - PAC/WPAD 취득 중 Windows 통합 인증이 필요할 때 한 번만 자동 로그온 재시도
 - 내부망은 DIRECT, 외부망은 PROXY를 기대하는 경로 일치 판정
+- WinHTTP `HEAD`·`GET` 수신 전용 요청 계층
+- HTTP 407에서 Negotiate 우선, NTLM 차선의 현재 Windows 사용자 통합 인증
+- Basic·Digest·Passport 전용 프록시 거부와 반복 407 재시도 상한
+- 원격 사이트 401과 프록시 407의 분리 처리
+- 자동 리다이렉트 차단, 최대 수신 바이트 적용, 응답 본문 즉시 폐기
 - 실제 프록시 주소와 PAC URL을 표시하지 않는 WPF 결과 화면
 - 실제 사내 값이 없는 합성 자체 점검과 Windows CI
 
-프록시 경로 확인은 사용자가 버튼을 눌렀을 때만 실행됩니다. 수동 설정만 있으면 로컬 판정으로 끝나지만, PAC/WPAD 환경에서는 회사 내부 PAC 파일 조회·WPAD 탐색·PAC 스크립트가 요구하는 DNS 확인이 발생할 수 있습니다. 이 단계에서는 대상 외부 사이트의 파일 본문을 내려받지 않습니다.
+프록시 경로 확인은 사용자가 버튼을 눌렀을 때만 실행됩니다. 수동 설정만 있으면 로컬 판정으로 끝나지만, PAC/WPAD 환경에서는 회사 내부 PAC 파일 조회·WPAD 탐색·PAC 스크립트가 요구하는 DNS 확인이 발생할 수 있습니다. 실제 HTTP 전송 계층도 상위 측정 기능에서 사용자가 측정을 시작한 경우에만 호출하도록 설계합니다.
 
 아직 구현되지 않은 기능:
 
-- 실제 HTTP 요청의 `407 Proxy Authentication Required` 처리
-- 내부·외부 다운로드 처리량 측정
+- 내부·외부 다운로드 처리량과 구간별 속도 측정 UI
+- 리다이렉트 URL 재검증 및 캐시 관련 헤더 수집
 - 브라우저 다운로드 처리량 관찰
 - 완성형 로컬 보고서와 정식 릴리스
 
-현재 WLAN 및 프록시 구현은 GitHub Windows 빌드로 코드 경계를 검증했지만, 실제 Windows 11 무선 어댑터·회사 PAC/WPAD·GPO/EDR 환경의 동작은 별도 수동 검증이 필요합니다. 진행 상황은 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md)에 기록합니다.
+현재 WLAN 및 프록시 구현은 GitHub Windows 빌드와 루프백 합성 서버로 코드 경계를 검증했습니다. 실제 Windows 11 무선 어댑터·회사 PAC/WPAD·Negotiate/NTLM·GPO/EDR 환경의 동작은 사용자가 별도 수동 검증합니다. 진행 상황은 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md)에 기록합니다.
 
 ## 저장소 구조
 
@@ -78,8 +83,9 @@ wlan-live-path-tester-ko/
 │  ├─ WlanLivePathTester.Core/      측정 모델·검증·판정 규칙
 │  └─ WlanLivePathTester.Windows/   WinHTTP·WLAN·IP Helper 경계
 ├─ tests/
-│  ├─ WlanLivePathTester.SelfTest/  외부 패키지 없는 결정론적 자체 점검
-│  └─ WlanLivePathTester.WindowsSmoke/ Windows API 로컬 smoke test
+│  ├─ WlanLivePathTester.SelfTest/       결정론적 Core 자체 점검
+│  ├─ WlanLivePathTester.WindowsSmoke/   Windows API 로컬 smoke test
+│  └─ WlanLivePathTester.ProxyAuthSmoke/ 루프백 WinHTTP·407 smoke test
 ├─ config/
 │  └─ targets.example.json          커밋 가능한 합성 예시
 ├─ resources/
@@ -97,6 +103,7 @@ dotnet restore .\WlanLivePathTester.sln
 dotnet build .\WlanLivePathTester.sln -c Release --no-restore
 dotnet run --project .\tests\WlanLivePathTester.SelfTest\WlanLivePathTester.SelfTest.csproj -c Release --no-build
 dotnet run --project .\tests\WlanLivePathTester.WindowsSmoke\WlanLivePathTester.WindowsSmoke.csproj -c Release --no-build
+dotnet run --project .\tests\WlanLivePathTester.ProxyAuthSmoke\WlanLivePathTester.ProxyAuthSmoke.csproj -c Release --no-build
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\audit-repository.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\audit-network-boundary.ps1
 ```
@@ -110,7 +117,7 @@ SHA256SUMS.txt
 THIRD_PARTY_NOTICES.md
 ```
 
-실제 Windows 11 수동 검증과 핵심 측정 기능이 완료되기 전에는 정식 릴리스를 만들지 않습니다.
+핵심 측정 기능과 배포 파이프라인이 완료되기 전에는 정식 릴리스를 만들지 않습니다. 실제 환경 검증 결과는 공개 저장소에 원문으로 커밋하지 않습니다.
 
 ## 라이선스
 
