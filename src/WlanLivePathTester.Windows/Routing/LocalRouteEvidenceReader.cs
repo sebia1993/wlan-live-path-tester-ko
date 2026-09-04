@@ -122,7 +122,14 @@ public static class LocalRouteEvidenceReader
         List<RouteAddressEvidence> evidence = [];
         foreach (IPAddress address in usableAddresses)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return RouteEvidenceEvaluator.Canceled(
+                    safeLabel,
+                    purpose,
+                    dnsWasUsed);
+            }
+
             WindowsBestInterfaceResult result =
                 WindowsBestInterfaceResolver.Resolve(address);
             evidence.Add(new RouteAddressEvidence(
@@ -175,8 +182,14 @@ public static class LocalRouteEvidenceReader
             return true;
         }
 
-        if (Uri.TryCreate(value, UriKind.Absolute, out Uri? absoluteUri))
+        if (value.Contains("://", StringComparison.Ordinal))
         {
+            if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? absoluteUri))
+            {
+                error = "유효한 절대 URL이 아닙니다.";
+                return false;
+            }
+
             if (!absoluteUri.Scheme.Equals(
                     Uri.UriSchemeHttp,
                     StringComparison.OrdinalIgnoreCase)
@@ -197,12 +210,6 @@ public static class LocalRouteEvidenceReader
 
             host = absoluteUri.IdnHost;
             return ValidateHost(host, out error);
-        }
-
-        if (value.Contains("://", StringComparison.Ordinal))
-        {
-            error = "지원하지 않는 URL 스킴입니다.";
-            return false;
         }
 
         if (!Uri.TryCreate(
