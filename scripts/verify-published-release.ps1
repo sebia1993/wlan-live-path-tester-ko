@@ -35,10 +35,31 @@ function Invoke-GhJson {
 
     $output = & gh @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) {
-        throw "GitHub CLI failed: gh $($Arguments -join ' ')`n$output"
+        throw "GitHub CLI failed: gh $($Arguments -join ' ')`n$($output -join [Environment]::NewLine)"
     }
 
-    return $output | ConvertFrom-Json
+    $json = $output -join [Environment]::NewLine
+    return $json | ConvertFrom-Json
+}
+
+function Get-RequiredJsonProperty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Object,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        throw "$Context does not expose the required '$Name' property."
+    }
+
+    return $property.Value
 }
 
 function Test-PeHeader {
@@ -49,8 +70,9 @@ function Test-PeHeader {
 
     $stream = [System.IO.File]::OpenRead($Path)
     try {
-        return $stream.ReadByte() -eq 0x4D `
-            -and $stream.ReadByte() -eq 0x5A
+        $first = $stream.ReadByte()
+        $second = $stream.ReadByte()
+        return $first -eq 0x4D -and $second -eq 0x5A
     }
     finally {
         $stream.Dispose()
@@ -69,10 +91,26 @@ function Get-Sha256 {
 }
 
 $normalizedTag = $Tag.Trim()
-if ($normalizedTag -notmatch '^v(?<version>(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)-[0-9A-Za-z.-]+)$') {
-    throw "Published release verification requires a prerelease tag such as v0.1.0-alpha.5: $Tag"
+$tagPattern = '^v(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))$'
+$tagMatch = [regex]::Match(
+    $normalizedTag,
+    $tagPattern,
+    [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+if (-not $tagMatch.Success) {
+    throw "Published release verification requires a strict prerelease tag such as v0.1.0-alpha.10: $Tag"
 }
-$version = $Matches['version']
+$version = $tagMatch.Groups['version'].Value
+$prerelease = $version.Substring($version.IndexOf('-') + 1)
+foreach ($identifier in $prerelease.Split('.')) {
+    $isNumeric = $identifier -match '^\d+$'
+    $hasLeadingZero = $identifier.Length -gt 1 `
+        -and $identifier.StartsWith(
+            '0',
+            [StringComparison]::Ordinal)
+    if ($isNumeric -and $hasLeadingZero) {
+        throw "Numeric prerelease identifiers cannot contain leading zeroes: $normalizedTag"
+    }
+}
 
 if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
     throw "Repository must use owner/name format: $Repository"
@@ -119,18 +157,40 @@ try {
         "repos/$Repository/releases/tags/$normalizedTag"
     )
 
+    $releaseTag = [string](Get-RequiredJsonProperty `
+        -Object $release `
+        -Name 'tag_name' `
+        -Context 'Release metadata')
+    $isDraft = [bool](Get-RequiredJsonProperty `
+        -Object $release `
+        -Name 'draft' `
+        -Context 'Release metadata')
+    $isPrerelease = [bool](Get-RequiredJsonProperty `
+        -Object $release `
+        -Name 'prerelease' `
+        -Context 'Release metadata')
+    $remoteAssets = @((Get-RequiredJsonProperty `
+        -Object $release `
+        -Name 'assets' `
+        -Context 'Release metadata'))
+
     Assert-Condition `
-        -Condition ([string]$release.tag_name -ceq $normalizedTag) `
-        -Message "Published release tag mismatch: $($release.tag_name)"
+        -Condition ($releaseTag -ceq $normalizedTag) `
+        -Message "Published release tag mismatch: $releaseTag"
     Assert-Condition `
-        -Condition (-not [bool]$release.draft) `
+        -Condition (-not $isDraft) `
         -Message 'Published release must not be a draft.'
     Assert-Condition `
-        -Condition ([bool]$release.prerelease) `
+        -Condition $isPrerelease `
         -Message 'Published release must retain prerelease=true.'
 
-    $remoteAssetNames = @($release.assets |
-        ForEach-Object { [string]$_.name } |
+    $remoteAssetNames = @($remoteAssets |
+        ForEach-Object {
+            [string](Get-RequiredJsonProperty `
+                -Object $_ `
+                -Name 'name' `
+                -Context 'Release asset metadata')
+        } |
         Sort-Object)
     Assert-Condition `
         -Condition (($remoteAssetNames -join '|') -ceq `
@@ -170,19 +230,36 @@ try {
 
     Write-Host 'Comparing downloaded bytes with GitHub asset digests...' `
         -ForegroundColor Cyan
-    foreach ($remoteAsset in $release.assets) {
-        $name = [string]$remoteAsset.name
-        $digest = [string]$remoteAsset.digest
+    foreach ($remoteAsset in $remoteAssets) {
+        $name = [string](Get-RequiredJsonProperty `
+            -Object $remoteAsset `
+            -Name 'name' `
+            -Context 'Release asset metadata')
+        $digest = [string](Get-RequiredJsonProperty `
+            -Object $remoteAsset `
+            -Name 'digest' `
+            -Context "Release asset '$name'")
+        $remoteSize = [long](Get-RequiredJsonProperty `
+            -Object $remoteAsset `
+            -Name 'size' `
+            -Context "Release asset '$name'")
+
+        $digestMatch = [regex]::Match(
+            $digest,
+            '^sha256:(?<hash>[0-9a-f]{64})$',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
         Assert-Condition `
-            -Condition ($digest -match '^sha256:(?<hash>[0-9a-f]{64})$') `
+            -Condition $digestMatch.Success `
             -Message "GitHub did not expose a SHA-256 digest for: $name"
         Assert-Condition `
-            -Condition ($localHashes[$name] -ceq $Matches['hash']) `
+            -Condition ($localHashes[$name] -ceq `
+                $digestMatch.Groups['hash'].Value) `
             -Message "Downloaded bytes differ from the GitHub digest: $name"
+
+        $localSize = (Get-Item `
+            -LiteralPath (Join-Path $resolvedDownloadRoot $name)).Length
         Assert-Condition `
-            -Condition ((Get-Item `
-                -LiteralPath (Join-Path $resolvedDownloadRoot $name)).Length `
-                -eq [long]$remoteAsset.size) `
+            -Condition ($localSize -eq $remoteSize) `
             -Message "Downloaded size differs from GitHub metadata: $name"
     }
 
@@ -197,15 +274,19 @@ try {
 
     $declaredHashes = @{}
     foreach ($line in $checksumLines) {
-        if ($line -notmatch '^(?<hash>[0-9a-f]{64})  (?<name>[^\\/]+)$') {
+        $checksumMatch = [regex]::Match(
+            $line,
+            '^(?<hash>[0-9a-f]{64})  (?<name>[^\\/]+)$',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        if (-not $checksumMatch.Success) {
             throw "Invalid SHA256SUMS.txt line: $line"
         }
 
-        $name = $Matches['name']
+        $name = $checksumMatch.Groups['name'].Value
         Assert-Condition `
             -Condition (-not $declaredHashes.ContainsKey($name)) `
             -Message "Duplicate checksum entry: $name"
-        $declaredHashes[$name] = $Matches['hash']
+        $declaredHashes[$name] = $checksumMatch.Groups['hash'].Value
     }
 
     foreach ($assetName in @(
@@ -226,10 +307,21 @@ try {
         'api',
         "repos/$Repository/git/ref/tags/$normalizedTag"
     )
+    $tagObject = Get-RequiredJsonProperty `
+        -Object $tagRef `
+        -Name 'object' `
+        -Context 'Tag reference'
+    $tagObjectType = [string](Get-RequiredJsonProperty `
+        -Object $tagObject `
+        -Name 'type' `
+        -Context 'Tag reference object')
+    $tagCommitSha = [string](Get-RequiredJsonProperty `
+        -Object $tagObject `
+        -Name 'sha' `
+        -Context 'Tag reference object')
     Assert-Condition `
-        -Condition ([string]$tagRef.object.type -ceq 'commit') `
+        -Condition ($tagObjectType -ceq 'commit') `
         -Message 'Expected a lightweight release tag pointing directly to a commit.'
-    $tagCommitSha = [string]$tagRef.object.sha
     Assert-Condition `
         -Condition ($tagCommitSha -match '^[0-9a-f]{40}$') `
         -Message "Invalid release commit SHA: $tagCommitSha"
@@ -240,14 +332,14 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($portablePath)
     try {
-        $entryNames = @($archive.Entries |
-            ForEach-Object { $_.FullName.Replace('\', '/') })
-        $duplicates = @($entryNames |
-            Group-Object |
-            Where-Object { $_.Count -gt 1 })
-        Assert-Condition `
-            -Condition ($duplicates.Count -eq 0) `
-            -Message "Published Portable ZIP contains duplicate entries: $($duplicates.Name -join ', ')"
+        $entriesByNormalizedName = @{}
+        foreach ($entry in $archive.Entries) {
+            $normalizedName = $entry.FullName.Replace('\', '/')
+            if ($entriesByNormalizedName.ContainsKey($normalizedName)) {
+                throw "Published Portable ZIP contains duplicate entry: $normalizedName"
+            }
+            $entriesByNormalizedName[$normalizedName] = $entry
+        }
 
         $requiredEntries = @(
             'WlanLivePathTester.exe',
@@ -272,7 +364,7 @@ try {
         )
         foreach ($requiredEntry in $requiredEntries) {
             Assert-Condition `
-                -Condition ($entryNames -contains $requiredEntry) `
+                -Condition ($entriesByNormalizedName.ContainsKey($requiredEntry)) `
                 -Message "Published Portable ZIP is missing: $requiredEntry"
         }
 
@@ -285,7 +377,7 @@ try {
             '.har',
             '.dmp'
         )
-        foreach ($entryName in $entryNames) {
+        foreach ($entryName in $entriesByNormalizedName.Keys) {
             $normalized = $entryName.Trim()
             Assert-Condition `
                 -Condition (-not [string]::IsNullOrWhiteSpace($normalized)) `
@@ -299,9 +391,11 @@ try {
             Assert-Condition `
                 -Condition ($normalized -notmatch '^[A-Za-z]:') `
                 -Message "Published Portable ZIP contains a drive path: $entryName"
+
+            $extension = [System.IO.Path]::GetExtension(
+                $normalized).ToLowerInvariant()
             Assert-Condition `
-                -Condition ($deniedExtensions -notcontains `
-                    [System.IO.Path]::GetExtension($normalized).ToLowerInvariant()) `
+                -Condition ($deniedExtensions -notcontains $extension) `
                 -Message "Published Portable ZIP contains a prohibited file: $entryName"
             Assert-Condition `
                 -Condition ($normalized -notmatch `
@@ -368,8 +462,9 @@ try {
     Write-Host "Single EXE SHA-256: $($localHashes[$singleAssetName])"
 }
 finally {
-    if ($createdTemporaryRoot `
-        -and (Test-Path -LiteralPath $resolvedDownloadRoot)) {
+    $shouldRemove = $createdTemporaryRoot `
+        -and (Test-Path -LiteralPath $resolvedDownloadRoot)
+    if ($shouldRemove) {
         Remove-Item `
             -LiteralPath $resolvedDownloadRoot `
             -Recurse `
