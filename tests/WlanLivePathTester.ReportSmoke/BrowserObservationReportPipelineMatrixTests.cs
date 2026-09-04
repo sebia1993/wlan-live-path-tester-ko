@@ -1,3 +1,4 @@
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using WlanLivePathTester.Core.Models;
@@ -250,6 +251,7 @@ internal static class BrowserObservationReportPipelineMatrixTests
         string reason,
         string display)
     {
+        string decodedHtml = WebUtility.HtmlDecode(html);
         using JsonDocument parsed = JsonDocument.Parse(json);
         Ensure(parsed.RootElement
                 .GetProperty("terminationReason")
@@ -267,8 +269,8 @@ internal static class BrowserObservationReportPipelineMatrixTests
                 $"\"observation\",\"terminationDisplay\",\"{display}\"",
                 StringComparison.Ordinal),
             $"전용 CSV 한국어 설명이 없습니다: {reason}");
-        Ensure(html.Contains(reason, StringComparison.Ordinal)
-               && html.Contains(display, StringComparison.Ordinal),
+        Ensure(decodedHtml.Contains(reason, StringComparison.Ordinal)
+               && decodedHtml.Contains(display, StringComparison.Ordinal),
             $"전용 HTML에 종료 원인과 한국어 설명이 없습니다: {reason}");
     }
 
@@ -280,6 +282,7 @@ internal static class BrowserObservationReportPipelineMatrixTests
         string findingCode,
         ReportFinding finding)
     {
+        string decodedHtml = WebUtility.HtmlDecode(html);
         using JsonDocument parsed = JsonDocument.Parse(json);
         Ensure(parsed.RootElement
                 .GetProperty("browserObservation")
@@ -298,15 +301,17 @@ internal static class BrowserObservationReportPipelineMatrixTests
             $"통합 CSV 종료 원인이 없습니다: {reason}");
         Ensure(csv.Contains(findingCode, StringComparison.Ordinal),
             $"통합 CSV Finding 코드가 없습니다: {reason}");
-        Ensure(html.Contains(reason, StringComparison.Ordinal)
-               && html.Contains(
+        Ensure(decodedHtml.Contains(reason, StringComparison.Ordinal)
+               && decodedHtml.Contains(
                    BrowserObservationTerminationPolicy.ToDisplayText(
                        Enum.Parse<BrowserObservationTerminationReason>(
                            reason)),
                    StringComparison.Ordinal),
             $"통합 HTML에 종료 원인 설명이 없습니다: {reason}");
-        Ensure(html.Contains(finding.Title, StringComparison.Ordinal)
-               && html.Contains(
+        Ensure(decodedHtml.Contains(
+                   finding.Title,
+                   StringComparison.Ordinal)
+               && decodedHtml.Contains(
                    finding.Interpretation,
                    StringComparison.Ordinal),
             $"통합 HTML에 Finding 제목과 해석이 없습니다: {reason}");
@@ -316,6 +321,7 @@ internal static class BrowserObservationReportPipelineMatrixTests
         string content,
         string reason)
     {
+        string decoded = WebUtility.HtmlDecode(content);
         string[] secrets =
         [
             SecretGuid,
@@ -330,7 +336,7 @@ internal static class BrowserObservationReportPipelineMatrixTests
 
         foreach (string secret in secrets)
         {
-            Ensure(!content.Contains(
+            Ensure(!decoded.Contains(
                     secret,
                     StringComparison.OrdinalIgnoreCase),
                 $"{reason} 보고서 출력에 민감값이 남았습니다: {secret}");
