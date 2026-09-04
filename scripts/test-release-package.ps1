@@ -159,7 +159,8 @@ try {
         'docs/NETWORK_BOUNDARY.md',
         'docs/BROWSER_OBSERVATION.md',
         'docs/REPORTING.md',
-        'docs/RELEASE_VALIDATION.md'
+        'docs/RELEASE_VALIDATION.md',
+        'docs/TARGET_CONFIGURATION.md'
     )
     foreach ($requiredEntry in $requiredEntries) {
         Assert-Condition `
