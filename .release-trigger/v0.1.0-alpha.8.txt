@@ -1,0 +1,1 @@
+Trigger the verified v0.1.0-alpha.8 prerelease workflow after strict physical Wi-Fi counter binding, structured browser observation reports, and system suspend/resume protection.
