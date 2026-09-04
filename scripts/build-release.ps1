@@ -183,6 +183,9 @@ try {
     Copy-RequiredFile `
         -Source (Join-Path $root 'docs\TARGET_CONFIGURATION.md') `
         -Destination (Join-Path $portableStage 'docs\TARGET_CONFIGURATION.md')
+    Copy-RequiredFile `
+        -Source (Join-Path $root 'docs\REPEATED_MEASUREMENT.md') `
+        -Destination (Join-Path $portableStage 'docs\REPEATED_MEASUREMENT.md')
 
     $exampleConfig = Join-Path $root 'config\targets.example.json'
     if (Test-Path -LiteralPath $exampleConfig -PathType Leaf) {

@@ -160,7 +160,8 @@ try {
         'docs/BROWSER_OBSERVATION.md',
         'docs/REPORTING.md',
         'docs/RELEASE_VALIDATION.md',
-        'docs/TARGET_CONFIGURATION.md'
+        'docs/TARGET_CONFIGURATION.md',
+        'docs/REPEATED_MEASUREMENT.md'
     )
     foreach ($requiredEntry in $requiredEntries) {
         Assert-Condition `
