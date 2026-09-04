@@ -180,6 +180,9 @@ try {
     Copy-RequiredFile `
         -Source (Join-Path $root 'docs\RELEASE_VALIDATION.md') `
         -Destination (Join-Path $portableStage 'docs\RELEASE_VALIDATION.md')
+    Copy-RequiredFile `
+        -Source (Join-Path $root 'docs\TARGET_CONFIGURATION.md') `
+        -Destination (Join-Path $portableStage 'docs\TARGET_CONFIGURATION.md')
 
     $exampleConfig = Join-Path $root 'config\targets.example.json'
     if (Test-Path -LiteralPath $exampleConfig -PathType Leaf) {
