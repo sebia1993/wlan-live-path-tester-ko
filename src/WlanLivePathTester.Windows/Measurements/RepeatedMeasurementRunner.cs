@@ -17,7 +17,7 @@ public static class RepeatedMeasurementRunner
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(plan);
 
-        IReadOnlyList<string> planErrors = plan.Validate();
+        IReadOnlyList<string> planErrors = plan.ValidateForTarget(target);
         if (planErrors.Count > 0)
         {
             throw new ArgumentException(
@@ -77,9 +77,17 @@ public static class RepeatedMeasurementRunner
             bool hasNextRun = runIndex + 1 < totalRuns;
             if (hasNextRun && plan.DelayMilliseconds > 0)
             {
-                await Task.Delay(
-                    plan.DelayMilliseconds,
-                    cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await Task.Delay(
+                        plan.DelayMilliseconds,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
 
