@@ -343,6 +343,7 @@ public static class ReportFindingEngine
         }
 
         AddObservationTerminationFinding(findings, observation);
+        AddObservationCounterResetFinding(findings, observation);
 
         if (observation.Confidence.Equals("Low", StringComparison.OrdinalIgnoreCase))
         {
@@ -379,6 +380,26 @@ public static class ReportFindingEngine
                 Limitation: "인터페이스 전체 카운터만으로 정지 원인을 특정할 수 없습니다.",
                 NextStep: "내부망과 복수 외부 대상의 자체 측정 및 WLAN 상태를 같은 위치에서 비교하십시오."));
         }
+    }
+
+    private static void AddObservationCounterResetFinding(
+        ICollection<ReportFinding> findings,
+        ReportObservationSection observation)
+    {
+        if (observation.CounterResetCount is not > 0)
+        {
+            return;
+        }
+
+        int resetCount = observation.CounterResetCount.Value;
+        AddUnique(findings, new ReportFinding(
+            Code: "BROWSER_OBSERVATION_COUNTER_RESET",
+            Severity: "Warning",
+            Title: "브라우저 관찰 중 인터페이스 카운터 재설정",
+            Evidence: $"관찰 중 누적 Rx·Tx 카운터 감소 또는 재설정이 {resetCount}회 기록됐으며 해당 구간의 바이트 델타와 Mbps는 통계에서 제외됐습니다.",
+            Interpretation: "같은 물리 Wi-Fi를 계속 사용했더라도 드라이버 재시작, 장치 재설정, 운영체제 통계 공급자 초기화 또는 카운터 wrap 가능성을 확인해야 합니다.",
+            Limitation: "카운터 감소만으로 물리 NIC 변경, WLAN 로밍, 드라이버 장애 또는 운영체제 통계 초기화 중 하나를 확정할 수 없습니다.",
+            NextStep: "같은 시각의 Windows 시스템·WLAN AutoConfig·무선 드라이버 이벤트와 장치 전원 관리 상태를 확인하고 관찰을 반복하십시오."));
     }
 
     private static void AddObservationTerminationFinding(
