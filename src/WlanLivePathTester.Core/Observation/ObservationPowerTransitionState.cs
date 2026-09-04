@@ -19,6 +19,7 @@ public sealed class ObservationPowerTransitionState
     private bool _observationActive;
     private bool _interruptedBySuspend;
     private bool _adapterReevaluationRequired;
+    private bool _resumeObservedForPendingTransition;
 
     public bool ObservationActive
     {
@@ -49,6 +50,17 @@ public sealed class ObservationPowerTransitionState
             lock (_sync)
             {
                 return _adapterReevaluationRequired;
+            }
+        }
+    }
+
+    public bool ResumeObservedForPendingTransition
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _resumeObservedForPendingTransition;
             }
         }
     }
@@ -92,12 +104,14 @@ public sealed class ObservationPowerTransitionState
         lock (_sync)
         {
             if (!_adapterReevaluationRequired
+                || !_resumeObservedForPendingTransition
                 || _observationActive)
             {
                 return false;
             }
 
             _adapterReevaluationRequired = false;
+            _resumeObservedForPendingTransition = false;
             return true;
         }
     }
@@ -106,6 +120,7 @@ public sealed class ObservationPowerTransitionState
     {
         bool wasActive = _observationActive;
         _adapterReevaluationRequired = true;
+        _resumeObservedForPendingTransition = false;
         if (wasActive)
         {
             _interruptedBySuspend = true;
@@ -123,6 +138,7 @@ public sealed class ObservationPowerTransitionState
     private ObservationPowerTransitionDecision HandleResume()
     {
         _adapterReevaluationRequired = true;
+        _resumeObservedForPendingTransition = true;
         bool canReevaluateNow = !_observationActive;
         return new ObservationPowerTransitionDecision(
             ShouldCancelObservation: false,
