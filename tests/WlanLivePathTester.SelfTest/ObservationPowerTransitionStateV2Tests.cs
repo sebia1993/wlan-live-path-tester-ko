@@ -11,7 +11,7 @@ internal static class ObservationPowerTransitionStateV2Tests
     internal static void Run()
     {
         ActiveSuspendCancelsAndDefersRefresh();
-        IdleSuspendDoesNotCancel();
+        IdleSuspendDoesNotCancelOrRefreshBeforeResume();
         IdleResumeAllowsOneRefresh();
         ActiveResumeDefersRefreshUntilCompletion();
         PowerStatusChangeDoesNotAffectObservation();
@@ -38,11 +38,13 @@ internal static class ObservationPowerTransitionStateV2Tests
             "관찰 완료 전까지 절전 중단 표시를 유지해야 합니다.");
         Ensure(state.AdapterReevaluationRequired,
             "절전 이후 어댑터 재평가가 필요해야 합니다.");
+        Ensure(!state.ResumeObservedForPendingTransition,
+            "Suspend 직후에는 Resume를 관측한 것으로 처리하면 안 됩니다.");
         Ensure(!state.TryMarkAdaptersReevaluated(),
-            "관찰이 활성 상태일 때 재평가 완료로 처리하면 안 됩니다.");
+            "관찰이 활성 상태이거나 Resume 전에는 재평가를 완료 처리하면 안 됩니다.");
     }
 
-    private static void IdleSuspendDoesNotCancel()
+    private static void IdleSuspendDoesNotCancelOrRefreshBeforeResume()
     {
         ObservationPowerTransitionState state = new();
 
@@ -57,6 +59,10 @@ internal static class ObservationPowerTransitionStateV2Tests
             "유휴 Suspend는 관찰 중단 표시를 만들면 안 됩니다.");
         Ensure(state.AdapterReevaluationRequired,
             "유휴 절전 뒤에도 복귀 후 어댑터 재평가가 필요합니다.");
+        Ensure(!state.ResumeObservedForPendingTransition,
+            "Suspend만으로 Resume를 관측했다고 처리하면 안 됩니다.");
+        Ensure(!state.TryMarkAdaptersReevaluated(),
+            "실제 Resume 전에 어댑터 재평가 요구를 소비하면 안 됩니다.");
     }
 
     private static void IdleResumeAllowsOneRefresh()
@@ -69,12 +75,15 @@ internal static class ObservationPowerTransitionStateV2Tests
 
         Ensure(resume.ShouldReevaluateAdapters,
             "유휴 Resume는 어댑터 재평가를 요청해야 합니다.");
+        Ensure(state.ResumeObservedForPendingTransition,
+            "Resume 관측 상태를 pending 전환에 기록해야 합니다.");
         Ensure(state.TryMarkAdaptersReevaluated(),
             "첫 유휴 재평가 완료 처리는 성공해야 합니다.");
         Ensure(!state.TryMarkAdaptersReevaluated(),
             "같은 Resume에 대해 재평가 완료를 두 번 소비하면 안 됩니다.");
-        Ensure(!state.AdapterReevaluationRequired,
-            "재평가 완료 뒤 pending 상태를 해제해야 합니다.");
+        Ensure(!state.AdapterReevaluationRequired
+               && !state.ResumeObservedForPendingTransition,
+            "재평가 완료 뒤 pending과 Resume 관측 상태를 함께 해제해야 합니다.");
     }
 
     private static void ActiveResumeDefersRefreshUntilCompletion()
@@ -88,6 +97,8 @@ internal static class ObservationPowerTransitionStateV2Tests
 
         Ensure(!resume.ShouldReevaluateAdapters,
             "관찰 정리가 끝나기 전 Resume는 즉시 재평가를 요청하면 안 됩니다.");
+        Ensure(state.ResumeObservedForPendingTransition,
+            "관찰 중이라도 Resume 관측 사실은 보존해야 합니다.");
         Ensure(!state.TryMarkAdaptersReevaluated(),
             "활성 관찰 중 pending 재평가를 소비하면 안 됩니다.");
         Ensure(state.CompleteObservation(),
@@ -114,8 +125,9 @@ internal static class ObservationPowerTransitionStateV2Tests
             "일반 전원 상태 변경은 어댑터 재평가를 요구하지 않아야 합니다.");
         Ensure(state.ObservationActive,
             "일반 전원 상태 변경 뒤 관찰은 계속 활성 상태여야 합니다.");
-        Ensure(!state.AdapterReevaluationRequired,
-            "일반 전원 상태 변경을 Resume로 오인하면 안 됩니다.");
+        Ensure(!state.AdapterReevaluationRequired
+               && !state.ResumeObservedForPendingTransition,
+            "일반 전원 상태 변경을 Suspend·Resume으로 오인하면 안 됩니다.");
     }
 
     private static void NewObservationClearsOnlyItsSuspendMarker()
@@ -133,6 +145,8 @@ internal static class ObservationPowerTransitionStateV2Tests
             "새 관찰은 이전 세션의 절전 중단 표시를 상속하면 안 됩니다.");
         Ensure(state.AdapterReevaluationRequired,
             "새 관찰 시작만으로 미수행 어댑터 재평가 요구를 지우면 안 됩니다.");
+        Ensure(!state.TryMarkAdaptersReevaluated(),
+            "Resume가 없고 새 관찰이 활성인 상태에서는 재평가를 소비하면 안 됩니다.");
     }
 
     private static void Ensure(bool condition, string message)
