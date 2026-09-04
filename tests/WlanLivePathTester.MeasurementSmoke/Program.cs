@@ -28,7 +28,7 @@ internal static class Program
             ("외부 프록시 다중 스트림 총량 상한", MeasuresExternalProxyWithTwoStreams),
             ("사전 취소 처리", HandlesPreCanceledMeasurement),
             ("내부 프록시 필수 설정 차단", RejectsInvalidInternalProxySemantics),
-            ("WinHTTP 본문 수신 시간 초과", DetectsReceiveTimeout)
+            ("지연 본문 수신 상한", ReadsDelayedBodyWithinConfiguredLimit)
         ];
 
         int failures = 0;
@@ -305,7 +305,7 @@ internal static class Program
             "내부 대상의 프록시 필수 설정은 요청 전에 차단해야 합니다.");
     }
 
-    private static async Task DetectsReceiveTimeout()
+    private static async Task ReadsDelayedBodyWithinConfiguredLimit()
     {
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(10));
         TcpListener listener = StartListener(out int port);
@@ -327,7 +327,7 @@ internal static class Program
         {
             WinHttpRequestResult result = WinHttpRequestExecutor.ExecuteExplicitForSmoke(
                 new WinHttpRequestOptions(
-                    Url: $"http://127.0.0.1:{port}/timeout",
+                    Url: $"http://127.0.0.1:{port}/delayed",
                     ExpectedPath: NetworkPathKind.Internal,
                     Method: WinHttpRequestMethod.Get,
                     TimeoutMilliseconds: 1000,
@@ -335,8 +335,12 @@ internal static class Program
                     RequireExpectedPath: true),
                 proxyEndpoint: null);
 
-            Assert(result.Status == WinHttpRequestStatus.TimedOut,
-                $"본문 수신 제한 시간을 초과하면 TimedOut이어야 합니다: {result.Status}");
+            Assert(result.Status == WinHttpRequestStatus.ResponseLimitReached,
+                $"지연 본문도 설정한 수신 상한에서 종료되어야 합니다: {result.Status}");
+            Assert(result.BytesReceived == 1 && result.ResponseWasTruncated,
+                "지연 응답에서도 1바이트 상한과 본문 비저장 경계를 유지해야 합니다.");
+            Assert(result.Duration >= TimeSpan.FromSeconds(1.5),
+                "합성 서버의 본문 지연이 실제 요청 경로에 반영되어야 합니다.");
 
             await server.WaitAsync(TimeSpan.FromSeconds(8));
         }
@@ -440,11 +444,11 @@ internal static class Program
             }
             catch (IOException)
             {
-                // A capped or timed-out client may close before the server finishes.
+                // A capped or canceled client may close before the server finishes.
             }
             catch (SocketException)
             {
-                // A capped or timed-out client may reset the loopback connection.
+                // A capped or canceled client may reset the loopback connection.
             }
         }
     }
