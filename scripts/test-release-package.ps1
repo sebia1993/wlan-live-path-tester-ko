@@ -157,11 +157,17 @@ try {
         'LICENSE',
         'THIRD_PARTY_NOTICES.md',
         'docs/NETWORK_BOUNDARY.md',
+        'docs/DOWNLOAD_MEASUREMENT.md',
         'docs/BROWSER_OBSERVATION.md',
+        'docs/NETWORK_INTERFACE_CONTEXT.md',
+        'docs/WLAN_INTERFACE_CORRELATION.md',
+        'docs/NETWORK_ADAPTER_DIAGNOSTICS.md',
+        'docs/PROXY_ROUTE_RESOLUTION.md',
         'docs/REPORTING.md',
-        'docs/RELEASE_VALIDATION.md',
         'docs/TARGET_CONFIGURATION.md',
-        'docs/REPEATED_MEASUREMENT.md'
+        'docs/ADMINISTRATOR_POLICY_VALIDATION.md',
+        'docs/REPEATED_MEASUREMENT.md',
+        'docs/RELEASE_VALIDATION.md'
     )
     foreach ($requiredEntry in $requiredEntries) {
         Assert-Condition `
