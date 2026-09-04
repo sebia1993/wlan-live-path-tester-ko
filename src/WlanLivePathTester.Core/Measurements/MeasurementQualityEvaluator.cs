@@ -1,3 +1,5 @@
+using WlanLivePathTester.Core.Models;
+
 namespace WlanLivePathTester.Core.Measurements;
 
 public enum MeasurementConfidence
@@ -71,7 +73,7 @@ public static class MeasurementQualityEvaluator
         }
 
         if (result.StreamsCompleted < result.StreamsRequested
-            || result.Status == Models.MeasurementStatus.PartialSuccess)
+            || result.Status == MeasurementStatus.PartialSuccess)
         {
             lowConfidence = true;
             reasons.Add("요청한 스트림 중 일부만 완료되었습니다.");
@@ -111,20 +113,20 @@ public static class MeasurementQualityEvaluator
     {
         ArgumentNullException.ThrowIfNull(headers);
 
-        if (TryGet(headers, "Age", out string? ageValue)
+        if (TryGet(headers, "Age", out string ageValue)
             && long.TryParse(ageValue, out long ageSeconds)
             && ageSeconds > 0)
         {
             return MeasurementCacheClassification.PossibleHit;
         }
 
-        if (TryGet(headers, "X-Cache", out string? xCache)
+        if (TryGet(headers, "X-Cache", out string xCache)
             && xCache.Contains("hit", StringComparison.OrdinalIgnoreCase))
         {
             return MeasurementCacheClassification.PossibleHit;
         }
 
-        if (TryGet(headers, "Cache-Status", out string? cacheStatus)
+        if (TryGet(headers, "Cache-Status", out string cacheStatus)
             && cacheStatus.Contains("hit", StringComparison.OrdinalIgnoreCase))
         {
             return MeasurementCacheClassification.PossibleHit;
