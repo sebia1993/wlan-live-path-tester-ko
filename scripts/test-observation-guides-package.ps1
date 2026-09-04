@@ -25,7 +25,7 @@ $requiredEntries = @(
     'docs/OBSERVATION_POWER_TRANSITIONS.md',
     'docs/OBSERVATION_COMBINED_DISRUPTIONS.md',
     'docs/WLAN_IDENTITY_CONTINUITY.md',
-    'docs/RELEASE_NOTES_v0.1.0-alpha.10.md'
+    'docs/RELEASE_NOTES_0.1.0-alpha.10.md'
 )
 
 $duplicateRequirements = @($requiredEntries |
