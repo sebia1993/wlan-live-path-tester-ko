@@ -30,6 +30,7 @@ public static class BrowserObservationCalculator
         bool counterReset = !adapterChanged
             && (currentCounter.BytesReceived < previousCounter.BytesReceived
                 || currentCounter.BytesSent < previousCounter.BytesSent);
+        bool wlanDisconnected = currentWlan is null || !currentWlan.IsConnected;
 
         long receiveDelta = 0;
         long transmitDelta = 0;
@@ -48,13 +49,14 @@ public static class BrowserObservationCalculator
                 : Math.Max(0, rawReceiveMbps.Value - Math.Max(0, baselineReceiveMbps));
         }
 
-        bool wlanDisconnected = currentWlan is null || !currentWlan.IsConnected;
         bool bssidChanged = HasBssidChanged(previousWlan, currentWlan);
         bool pauseDetected = !isBaseline
+            && !wlanDisconnected
             && adjustedReceiveMbps.HasValue
             && previousAdjustedReceiveMbps is >= ActiveTrafficThresholdMbps
             && adjustedReceiveMbps.Value < PauseThresholdMbps;
         bool suddenDropDetected = !isBaseline
+            && !wlanDisconnected
             && adjustedReceiveMbps.HasValue
             && previousAdjustedReceiveMbps is >= ActiveTrafficThresholdMbps
             && adjustedReceiveMbps.Value <= previousAdjustedReceiveMbps.Value * SuddenDropRatio;
@@ -124,7 +126,9 @@ public static class BrowserObservationCalculator
         ArgumentNullException.ThrowIfNull(samples);
 
         BrowserObservationSample[] baseline = samples
-            .Where(sample => sample.IsBaseline && sample.RawReceiveMbps.HasValue)
+            .Where(sample => sample.IsBaseline
+                && !sample.WlanDisconnected
+                && sample.RawReceiveMbps.HasValue)
             .ToArray();
 
         return baseline.Length == 0
@@ -142,10 +146,14 @@ public static class BrowserObservationCalculator
         ArgumentNullException.ThrowIfNull(samples);
 
         BrowserObservationSample[] baselineSamples = samples
-            .Where(sample => sample.IsBaseline && sample.RawReceiveMbps.HasValue)
+            .Where(sample => sample.IsBaseline
+                && !sample.WlanDisconnected
+                && sample.RawReceiveMbps.HasValue)
             .ToArray();
         BrowserObservationSample[] activeSamples = samples
-            .Where(sample => !sample.IsBaseline && sample.AdjustedReceiveMbps.HasValue)
+            .Where(sample => !sample.IsBaseline
+                && !sample.WlanDisconnected
+                && sample.AdjustedReceiveMbps.HasValue)
             .ToArray();
 
         double baselineReceiveMbps = baselineSamples.Length == 0
