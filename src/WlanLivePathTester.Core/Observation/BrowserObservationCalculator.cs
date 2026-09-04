@@ -31,6 +31,8 @@ public static class BrowserObservationCalculator
             && (currentCounter.BytesReceived < previousCounter.BytesReceived
                 || currentCounter.BytesSent < previousCounter.BytesSent);
         bool wlanDisconnected = currentWlan is null || !currentWlan.IsConnected;
+        bool previousWlanUnavailable =
+            previousWlan is null || !previousWlan.IsConnected;
 
         long receiveDelta = 0;
         long transmitDelta = 0;
@@ -52,11 +54,13 @@ public static class BrowserObservationCalculator
         bool bssidChanged = HasBssidChanged(previousWlan, currentWlan);
         bool pauseDetected = !isBaseline
             && !wlanDisconnected
+            && !previousWlanUnavailable
             && adjustedReceiveMbps.HasValue
             && previousAdjustedReceiveMbps is >= ActiveTrafficThresholdMbps
             && adjustedReceiveMbps.Value < PauseThresholdMbps;
         bool suddenDropDetected = !isBaseline
             && !wlanDisconnected
+            && !previousWlanUnavailable
             && adjustedReceiveMbps.HasValue
             && previousAdjustedReceiveMbps is >= ActiveTrafficThresholdMbps
             && adjustedReceiveMbps.Value <= previousAdjustedReceiveMbps.Value * SuddenDropRatio;
