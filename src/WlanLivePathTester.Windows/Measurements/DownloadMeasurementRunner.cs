@@ -80,7 +80,7 @@ public static class DownloadMeasurementRunner
             IEnumerable<string> semanticErrors = semanticError is null
                 ? Array.Empty<string>()
                 : new[] { semanticError };
-            string message = string.Join(
+            string validationMessage = string.Join(
                 " ",
                 validationErrors.Concat(semanticErrors));
 
@@ -99,7 +99,7 @@ public static class DownloadMeasurementRunner
                 samples: [],
                 responseHeaders: EmptyHeaders,
                 errorCode: "TARGET_VALIDATION_FAILED",
-                message: message);
+                message: validationMessage);
         }
 
         if (cancellationToken.IsCancellationRequested)
