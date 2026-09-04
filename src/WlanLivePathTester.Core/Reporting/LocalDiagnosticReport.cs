@@ -1,3 +1,4 @@
+using WlanLivePathTester.Core.Measurements;
 using WlanLivePathTester.Core.Observation;
 
 namespace WlanLivePathTester.Core.Reporting;
@@ -10,7 +11,8 @@ public sealed record LocalDiagnosticReport(
     IReadOnlyList<ReportTextSection> Measurements,
     ReportObservationSection? BrowserObservation,
     IReadOnlyList<ReportFinding> Findings,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations,
+    IReadOnlyList<ReportMeasurementSection>? StructuredMeasurements = null);
 
 public sealed record ReportMetadata(
     DateTimeOffset GeneratedAt,
@@ -56,6 +58,37 @@ public sealed record ReportTextSection(
     string Title,
     string Content,
     DateTimeOffset CapturedAt);
+
+public sealed record ReportMeasurementSection(
+    string TargetName,
+    string PathKind,
+    string Status,
+    DateTimeOffset StartedAt,
+    DateTimeOffset CompletedAt,
+    double DurationSeconds,
+    long BytesReceived,
+    double? AverageMbps,
+    double? PeakMbps,
+    double? TimeToFirstByteMilliseconds,
+    int? HttpStatusCode,
+    bool? ProxyWasUsed,
+    int StreamsRequested,
+    int StreamsCompleted,
+    int RedirectCount,
+    string FinalUrl,
+    string CacheClassification,
+    string Confidence,
+    IReadOnlyList<string> ConfidenceReasons,
+    string? ErrorCode,
+    string Message,
+    IReadOnlyDictionary<string, string> ResponseMetadata,
+    IReadOnlyList<ReportThroughputSample> Samples);
+
+public sealed record ReportThroughputSample(
+    int StreamIndex,
+    double OffsetSeconds,
+    long IntervalBytes,
+    double Mbps);
 
 public sealed record ReportObservationSection(
     string Status,
@@ -114,6 +147,79 @@ public sealed record LocalReportExportResult(
     string HtmlPath,
     string Sha256Path,
     IReadOnlyDictionary<string, string> Sha256);
+
+public static class ReportMeasurementMapper
+{
+    private static readonly string[] IncludedHeaderNames =
+    [
+        "Age",
+        "Cache-Status",
+        "X-Cache",
+        "Content-Length",
+        "Content-Range",
+        "Via"
+    ];
+
+    public static ReportMeasurementSection FromResult(
+        DownloadMeasurementResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        MeasurementQualityAssessment quality =
+            MeasurementQualityEvaluator.Evaluate(result);
+        Dictionary<string, string> metadata =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string name in IncludedHeaderNames)
+        {
+            if (!result.ResponseHeaders.TryGetValue(name, out string? value)
+                || string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            metadata[name] = name.Equals("Via", StringComparison.OrdinalIgnoreCase)
+                ? "[설정됨]"
+                : SensitiveDataRedactor.RedactText(value.Trim()) ?? string.Empty;
+        }
+
+        return new ReportMeasurementSection(
+            TargetName: SensitiveDataRedactor.RedactText(result.TargetName)
+                ?? "측정 대상",
+            PathKind: result.PathKind.ToString(),
+            Status: result.Status.ToString(),
+            StartedAt: result.StartedAt,
+            CompletedAt: result.CompletedAt,
+            DurationSeconds: Math.Max(0, result.Duration.TotalSeconds),
+            BytesReceived: result.BytesReceived,
+            AverageMbps: result.AverageMbps,
+            PeakMbps: result.PeakMbps,
+            TimeToFirstByteMilliseconds: result.TimeToFirstByte?.TotalMilliseconds,
+            HttpStatusCode: result.HttpStatusCode,
+            ProxyWasUsed: result.ProxyWasUsed,
+            StreamsRequested: result.StreamsRequested,
+            StreamsCompleted: result.StreamsCompleted,
+            RedirectCount: result.RedirectCount,
+            FinalUrl: SensitiveDataRedactor.RedactUrl(result.FinalUrl),
+            CacheClassification: quality.CacheClassification.ToString(),
+            Confidence: quality.Confidence.ToString(),
+            ConfidenceReasons: quality.Reasons
+                .Select(reason => SensitiveDataRedactor.RedactText(reason)
+                    ?? string.Empty)
+                .ToArray(),
+            ErrorCode: SensitiveDataRedactor.RedactText(result.ErrorCode),
+            Message: SensitiveDataRedactor.RedactText(result.Message)
+                ?? string.Empty,
+            ResponseMetadata: metadata,
+            Samples: result.Samples
+                .Select(sample => new ReportThroughputSample(
+                    StreamIndex: sample.StreamIndex,
+                    OffsetSeconds: sample.Offset.TotalSeconds,
+                    IntervalBytes: sample.IntervalBytes,
+                    Mbps: sample.Mbps))
+                .ToArray());
+    }
+}
 
 public static class ReportObservationMapper
 {
