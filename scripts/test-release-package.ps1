@@ -138,9 +138,11 @@ try {
     $duplicates = @($entryNames |
         Group-Object |
         Where-Object { $_.Count -gt 1 })
+    $duplicateNames = @($duplicates |
+        ForEach-Object { $_.Name })
     Assert-Condition `
         -Condition ($duplicates.Count -eq 0) `
-        -Message "Portable ZIP contains duplicate entries: $($duplicates.Name -join ', ')"
+        -Message "Portable ZIP contains duplicate entries: $($duplicateNames -join ', ')"
 
     $requiredEntries = @(
         'WlanLivePathTester.exe',

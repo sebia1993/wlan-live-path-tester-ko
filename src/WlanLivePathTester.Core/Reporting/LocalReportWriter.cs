@@ -201,10 +201,10 @@ public static class LocalReportWriter
             ReportObservationSample sample = observation.Samples[index];
             string section = $"browserObservation.sample.{index + 1}";
             Add(rows, section, "timestamp", Iso(sample.Timestamp));
-            Add(rows, section, "intervalSeconds", Number(sample.IntervalSeconds));
+            Add(rows, section, "intervalSeconds", Number<double>(sample.IntervalSeconds));
             Add(rows, section, "isBaseline", Boolean(sample.IsBaseline));
-            Add(rows, section, "receiveBytesDelta", Number(sample.ReceiveBytesDelta));
-            Add(rows, section, "transmitBytesDelta", Number(sample.TransmitBytesDelta));
+            Add(rows, section, "receiveBytesDelta", Number<long>(sample.ReceiveBytesDelta));
+            Add(rows, section, "transmitBytesDelta", Number<long>(sample.TransmitBytesDelta));
             Add(rows, section, "rawReceiveMbps", Number(sample.RawReceiveMbps));
             Add(rows, section, "rawTransmitMbps", Number(sample.RawTransmitMbps));
             Add(rows, section, "adjustedReceiveMbps", Number(sample.AdjustedReceiveMbps));

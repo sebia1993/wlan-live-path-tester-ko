@@ -93,6 +93,9 @@ jobs:
               throw "Unable to inspect Release state. gh exit code: $releaseExitCode"
           }
 
+          Write-Host 'No existing Release was found. Prerelease creation may continue.'
+          exit 0
+
       - name: Verify source and all smoke tests
         shell: powershell
         run: >-

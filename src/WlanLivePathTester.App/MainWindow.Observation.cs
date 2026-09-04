@@ -179,7 +179,7 @@ public partial class MainWindow
             return;
         }
 
-        if (_measurementCancellation is not null)
+        if (_measurementRunning)
         {
             SetObservationResult("내부·외부 다운로드 측정이 진행 중입니다. 해당 측정을 중지한 뒤 브라우저 관찰을 시작하십시오.");
             return;
@@ -301,8 +301,8 @@ public partial class MainWindow
             _observationDurationTextBox.IsEnabled = !isRunning;
         }
 
-        InternalMeasureButton.IsEnabled = !isRunning;
-        ExternalMeasureButton.IsEnabled = !isRunning;
+        StartInternalMeasurementButton.IsEnabled = !isRunning;
+        StartExternalMeasurementButton.IsEnabled = !isRunning;
     }
 
     private void SetObservationResult(string text)
