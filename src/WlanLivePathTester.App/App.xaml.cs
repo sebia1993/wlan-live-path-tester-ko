@@ -15,6 +15,7 @@ public partial class App : Application
         if (MainWindow is MainWindow window)
         {
             window.EnsureNetworkEnvironmentTab();
+            window.EnsureNetworkEnvironmentReportTab();
             window.EnsureRepeatedMeasurementReportTab();
         }
     }
