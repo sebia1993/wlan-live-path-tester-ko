@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using WlanLivePathTester.Core.Measurements;
+using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Core.Reporting;
 
 namespace WlanLivePathTester.ReportSmoke;
@@ -13,8 +15,10 @@ internal static class Program
             ("민감 문자열 마스킹", RedactsSensitiveText),
             ("IPv6 마스킹과 시각 보존", RedactsIpv6WithoutMaskingClockTime),
             ("CSV 수식 주입 방지", ProtectsCsvFormula),
-            ("JSON 직렬화와 비밀값 비노출", SerializesSafeJson),
+            ("JSON 구조화 측정과 비밀값 비노출", SerializesSafeJson),
+            ("CSV 구조화 측정 출력", WritesStructuredCsv),
             ("외부 리소스 없는 HTML과 인코딩", RendersOfflineSafeHtml),
+            ("측정 신뢰도와 캐시 판정", EvaluatesMeasurementQuality),
             ("결정론적 Finding 생성", CreatesDeterministicFindings),
             ("JSON CSV HTML SHA-256 로컬 저장", WritesAllLocalFiles)
         ];
@@ -84,12 +88,35 @@ internal static class Program
         string json = LocalReportWriter.RenderJson(report);
         using JsonDocument document = JsonDocument.Parse(json);
 
-        Assert(document.RootElement.GetProperty("schemaVersion").GetString() == "1.0",
+        Assert(document.RootElement.GetProperty("schemaVersion").GetString() == "1.1",
             "JSON 스키마 버전을 기록해야 합니다.");
+        JsonElement structured = document.RootElement
+            .GetProperty("structuredMeasurements");
+        Assert(structured.GetArrayLength() == 2,
+            "두 개의 구조화 측정 결과가 필요합니다.");
+        Assert(structured[0].GetProperty("averageMbps").GetDouble() == 80,
+            "구조화 평균 처리량을 숫자로 기록해야 합니다.");
         Assert(!json.Contains("192.168.10.20", StringComparison.Ordinal),
             "JSON에 실제 합성 IP 원문이 남으면 안 됩니다.");
         Assert(!json.Contains("AA:BB:CC:DD:EE:FF", StringComparison.OrdinalIgnoreCase),
             "JSON에 실제 합성 BSSID 원문이 남으면 안 됩니다.");
+        Assert(!json.Contains("token=secret", StringComparison.Ordinal),
+            "JSON에 URL 쿼리가 남으면 안 됩니다.");
+    }
+
+    private static void WritesStructuredCsv()
+    {
+        string csv = LocalReportWriter.RenderCsv(CreateSyntheticReport());
+        Assert(csv.Contains("structuredMeasurement.1", StringComparison.Ordinal),
+            "CSV에 구조화 측정 섹션이 필요합니다.");
+        Assert(csv.Contains("averageMbps", StringComparison.Ordinal),
+            "CSV에 평균 처리량 키가 필요합니다.");
+        Assert(csv.Contains("cacheClassification", StringComparison.Ordinal),
+            "CSV에 캐시 판정 키가 필요합니다.");
+        Assert(csv.Contains("confidenceReasons", StringComparison.Ordinal),
+            "CSV에 신뢰도 근거가 필요합니다.");
+        Assert(!csv.Contains("token=secret", StringComparison.Ordinal),
+            "CSV에 URL 쿼리가 남으면 안 됩니다.");
     }
 
     private static void RendersOfflineSafeHtml()
@@ -101,6 +128,10 @@ internal static class Program
             "HTML5 doctype이 필요합니다.");
         Assert(html.Contains("Content-Security-Policy", StringComparison.Ordinal),
             "로컬 HTML에 CSP가 필요합니다.");
+        Assert(html.Contains("구조화 다운로드 측정", StringComparison.Ordinal),
+            "HTML에 구조화 측정 섹션이 필요합니다.");
+        Assert(html.Contains("캐시 판정", StringComparison.Ordinal),
+            "HTML에 캐시 판정이 필요합니다.");
         Assert(!html.Contains("<script", StringComparison.OrdinalIgnoreCase),
             "HTML에 스크립트를 포함하면 안 됩니다.");
         Assert(!html.Contains("<iframe", StringComparison.OrdinalIgnoreCase),
@@ -113,6 +144,47 @@ internal static class Program
             "측정 문구의 HTML 특수 문자를 인코딩해야 합니다.");
     }
 
+    private static void EvaluatesMeasurementQuality()
+    {
+        DownloadMeasurementResult highQuality = CreateDownloadResult(
+            status: MeasurementStatus.Success,
+            bytesReceived: 100L * 1024 * 1024,
+            durationSeconds: 8,
+            averageMbps: 100,
+            httpStatusCode: 200,
+            samples:
+            [
+                new ThroughputSample(1, TimeSpan.FromSeconds(1), 12_500_000, 100),
+                new ThroughputSample(1, TimeSpan.FromSeconds(2), 12_500_000, 100),
+                new ThroughputSample(1, TimeSpan.FromSeconds(3), 12_500_000, 100)
+            ],
+            headers: new Dictionary<string, string>
+            {
+                ["Content-Length"] = "104857600"
+            });
+        MeasurementQualityAssessment high =
+            MeasurementQualityEvaluator.Evaluate(highQuality);
+        Assert(high.Confidence == MeasurementConfidence.High,
+            "충분한 수신량과 시간은 높은 신뢰도여야 합니다.");
+        Assert(high.CacheClassification == MeasurementCacheClassification.NoHitEvidence,
+            "일반 메타데이터만 있으면 캐시 적중 근거 없음이어야 합니다.");
+
+        DownloadMeasurementResult lowQuality = CreateDownloadResult(
+            status: MeasurementStatus.Success,
+            bytesReceived: 5L * 1024 * 1024,
+            durationSeconds: 1,
+            averageMbps: 40,
+            httpStatusCode: 200,
+            samples: [new ThroughputSample(1, TimeSpan.FromSeconds(1), 5L * 1024 * 1024, 40)],
+            headers: new Dictionary<string, string> { ["Age"] = "60" });
+        MeasurementQualityAssessment low =
+            MeasurementQualityEvaluator.Evaluate(lowQuality);
+        Assert(low.Confidence == MeasurementConfidence.Low,
+            "짧고 작은 측정은 낮은 신뢰도여야 합니다.");
+        Assert(low.CacheClassification == MeasurementCacheClassification.PossibleHit,
+            "Age 헤더는 캐시 적중 가능성으로 분류해야 합니다.");
+    }
+
     private static void CreatesDeterministicFindings()
     {
         LocalDiagnosticReport report = CreateSyntheticReport();
@@ -120,12 +192,15 @@ internal static class Program
             report.Wlan,
             report.Proxy,
             report.Measurements,
-            report.BrowserObservation);
+            report.BrowserObservation,
+            report.StructuredMeasurements);
 
         Assert(findings.Any(item => item.Code == "WLAN_WEAK_RSSI"),
             "약한 RSSI Finding이 필요합니다.");
         Assert(findings.Any(item => item.Code == "PROXY_AUTHENTICATION_FAILURE"),
             "HTTP 407 Finding이 필요합니다.");
+        Assert(findings.Any(item => item.Code == "CACHE_HIT_POSSIBLE"),
+            "캐시 가능성 Finding이 필요합니다.");
         Assert(findings.Any(item => item.Code == "BSSID_CHANGE_WITH_THROUGHPUT_DROP"),
             "BSSID 변경과 처리량 저하 Finding이 필요합니다.");
     }
@@ -211,7 +286,7 @@ internal static class Program
             BypassConfigured: true,
             Win32Error: null,
             Statement: "프록시 주소와 PAC URL은 포함하지 않았습니다.");
-        ReportTextSection measurement = new(
+        ReportTextSection measurementText = new(
             SectionId: "external",
             Title: "외부망 다운로드 측정 <img src=x onerror=alert(1)>",
             Content: SensitiveDataRedactor.RedactText(
@@ -260,13 +335,45 @@ internal static class Program
                     Note: "합성 샘플")
             ]);
 
+        DownloadMeasurementResult successful = CreateDownloadResult(
+            status: MeasurementStatus.Success,
+            bytesReceived: 100L * 1024 * 1024,
+            durationSeconds: 10,
+            averageMbps: 80,
+            httpStatusCode: 200,
+            samples:
+            [
+                new ThroughputSample(1, TimeSpan.FromSeconds(1), 10_000_000, 80),
+                new ThroughputSample(1, TimeSpan.FromSeconds(2), 10_000_000, 80)
+            ],
+            headers: new Dictionary<string, string>
+            {
+                ["Age"] = "120",
+                ["Via"] = "synthetic-proxy.invalid"
+            });
+        DownloadMeasurementResult authFailure = CreateDownloadResult(
+            status: MeasurementStatus.ProxyAuthenticationRequired,
+            bytesReceived: 0,
+            durationSeconds: 1,
+            averageMbps: null,
+            httpStatusCode: 407,
+            samples: [],
+            headers: new Dictionary<string, string>(),
+            errorCode: "PROXY_AUTHENTICATION_FAILED");
+        IReadOnlyList<ReportMeasurementSection> structured =
+        [
+            ReportMeasurementMapper.FromResult(successful),
+            ReportMeasurementMapper.FromResult(authFailure)
+        ];
+
         IReadOnlyList<ReportFinding> findings = ReportFindingEngine.Evaluate(
             wlan,
             proxy,
-            [measurement],
-            observation);
+            [measurementText],
+            observation,
+            structured);
         return new LocalDiagnosticReport(
-            SchemaVersion: "1.0",
+            SchemaVersion: "1.1",
             Metadata: new ReportMetadata(
                 GeneratedAt: now,
                 ApplicationName: "WLAN Live Path Tester KO",
@@ -278,10 +385,47 @@ internal static class Program
                 DataHandlingStatement: "로컬 생성, 외부 업로드 없음"),
             Wlan: wlan,
             Proxy: proxy,
-            Measurements: [measurement],
+            Measurements: [measurementText],
             BrowserObservation: observation,
             Findings: findings,
-            Limitations: ReportFindingEngine.DefaultLimitations());
+            Limitations: ReportFindingEngine.DefaultLimitations(),
+            StructuredMeasurements: structured);
+    }
+
+    private static DownloadMeasurementResult CreateDownloadResult(
+        MeasurementStatus status,
+        long bytesReceived,
+        double durationSeconds,
+        double? averageMbps,
+        int? httpStatusCode,
+        IReadOnlyList<ThroughputSample> samples,
+        IReadOnlyDictionary<string, string> headers,
+        string? errorCode = null)
+    {
+        DateTimeOffset startedAt = DateTimeOffset.UnixEpoch.AddHours(9);
+        return new DownloadMeasurementResult(
+            TargetName: "외부 합성 대상",
+            PathKind: NetworkPathKind.External,
+            Status: status,
+            StartedAt: startedAt,
+            CompletedAt: startedAt.AddSeconds(durationSeconds),
+            BytesReceived: bytesReceived,
+            AverageMbps: averageMbps,
+            TimeToFirstByte: httpStatusCode.HasValue
+                ? TimeSpan.FromMilliseconds(120)
+                : null,
+            HttpStatusCode: httpStatusCode,
+            ProxyWasUsed: true,
+            StreamsRequested: 1,
+            StreamsCompleted: status == MeasurementStatus.Success ? 1 : 0,
+            RedirectCount: 0,
+            FinalUrl: "https://example.invalid/file.bin?token=secret",
+            Samples: samples,
+            ResponseHeaders: headers,
+            ErrorCode: errorCode,
+            Message: status == MeasurementStatus.Success
+                ? "합성 성공 결과"
+                : "합성 프록시 인증 실패");
     }
 
     private static void Assert(bool condition, string message)

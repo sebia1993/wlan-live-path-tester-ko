@@ -43,7 +43,8 @@ public sealed record WinHttpRequestOptions(
     WinHttpRequestMethod Method = WinHttpRequestMethod.Head,
     int TimeoutMilliseconds = 15000,
     long MaxResponseBytes = 1024 * 1024,
-    bool RequireExpectedPath = true);
+    bool RequireExpectedPath = true,
+    CancellationToken CancellationToken = default);
 
 public sealed record WinHttpRequestResult(
     WinHttpRequestStatus Status,

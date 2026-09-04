@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using WlanLivePathTester.Core.Configuration;
 using WlanLivePathTester.Core.Models;
 
 namespace WlanLivePathTester.Core.Security;
@@ -24,6 +25,20 @@ public static class TargetValidator
         {
             errors.Add("유효한 절대 URL이 아닙니다.");
             return errors;
+        }
+
+        if (ApprovedTargetRuntimeCatalog.IsActive)
+        {
+            if (!ApprovedTargetRuntimeCatalog.TryResolve(
+                    target,
+                    out MeasurementTargetDefinition approved))
+            {
+                errors.Add("현재 승인 대상 목록에 등록되지 않은 URL입니다. 고급 수동 입력 모드를 명시적으로 선택하거나 승인 목록을 갱신하십시오.");
+            }
+            else if (!MatchesApprovedRuntimeSettings(target, approved))
+            {
+                errors.Add("현재 입력한 수신량·제한 시간·스트림·리다이렉트 또는 경로 제한이 승인 대상 설정과 일치하지 않습니다.");
+            }
         }
 
         if (!uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
@@ -66,6 +81,8 @@ public static class TargetValidator
         {
             errors.Add("최대 리다이렉트 수는 0~10 범위여야 합니다.");
         }
+
+        errors.AddRange(TargetHostPolicy.ValidateConfiguredHosts(target));
 
         if (target.PathKind == NetworkPathKind.External)
         {
@@ -120,6 +137,17 @@ public static class TargetValidator
             || (bytes[0] == 198 && bytes[1] is 18 or 19)
             || bytes[0] >= 224;
     }
+
+    private static bool MatchesApprovedRuntimeSettings(
+        MeasurementTargetDefinition requested,
+        MeasurementTargetDefinition approved) =>
+        requested.PathKind == approved.PathKind
+        && requested.RequireProxy == approved.RequireProxy
+        && requested.RequireDirect == approved.RequireDirect
+        && requested.MaxBytes == approved.MaxBytes
+        && requested.TimeoutSeconds == approved.TimeoutSeconds
+        && requested.Streams == approved.Streams
+        && requested.MaxRedirects == approved.MaxRedirects;
 
     private static bool IsLocalHostName(Uri uri)
     {

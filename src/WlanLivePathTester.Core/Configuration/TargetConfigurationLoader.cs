@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Core.Security;
 
@@ -10,7 +11,8 @@ public static class TargetConfigurationLoader
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Disallow,
-        AllowTrailingCommas = false
+        AllowTrailingCommas = false,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
     public static IReadOnlyList<MeasurementTargetDefinition> LoadFromJson(string json)
@@ -63,16 +65,22 @@ public static class TargetConfigurationLoader
 
         foreach (TargetItem item in source)
         {
+            IReadOnlyList<string>? allowedRedirectHosts = item.AllowedRedirectHosts?
+                .Where(host => !string.IsNullOrWhiteSpace(host))
+                .Select(host => host.Trim().TrimEnd('.'))
+                .ToArray();
+
             destination.Add(new MeasurementTargetDefinition(
                 Name: item.Name ?? string.Empty,
                 Url: item.Url ?? string.Empty,
                 PathKind: pathKind,
-                RequireProxy: item.RequireProxy ?? false,
-                RequireDirect: item.RequireDirect ?? false,
+                RequireProxy: item.RequireProxy ?? pathKind == NetworkPathKind.External,
+                RequireDirect: item.RequireDirect ?? pathKind == NetworkPathKind.Internal,
                 MaxBytes: item.MaxBytes ?? defaults.MaxBytes,
                 TimeoutSeconds: item.TimeoutSeconds ?? defaults.TimeoutSeconds,
                 Streams: item.Streams ?? defaults.Streams,
-                MaxRedirects: item.MaxRedirects ?? defaults.MaxRedirects));
+                MaxRedirects: item.MaxRedirects ?? defaults.MaxRedirects,
+                AllowedRedirectHosts: allowedRedirectHosts));
         }
     }
 
@@ -102,5 +110,6 @@ public static class TargetConfigurationLoader
         public int? TimeoutSeconds { get; init; }
         public int? Streams { get; init; }
         public int? MaxRedirects { get; init; }
+        public List<string>? AllowedRedirectHosts { get; init; }
     }
 }

@@ -40,6 +40,11 @@ public static class WinHttpRequestExecutor
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        if (options.CancellationToken.IsCancellationRequested)
+        {
+            return Canceled(options.Url);
+        }
+
         if (!OperatingSystem.IsWindows())
         {
             return Failure(
@@ -56,6 +61,11 @@ public static class WinHttpRequestExecutor
             destination!.AbsoluteUri,
             options.ExpectedPath,
             Math.Min(options.TimeoutMilliseconds, 30000));
+
+        if (options.CancellationToken.IsCancellationRequested)
+        {
+            return Canceled(options.Url, route: resolved.Summary);
+        }
 
         if (!resolved.Summary.IsSuccess)
         {
@@ -85,6 +95,11 @@ public static class WinHttpRequestExecutor
         WinHttpRequestResult? lastFailure = null;
         foreach (string proxyEndpoint in resolved.Selection.ProxyUris)
         {
+            if (options.CancellationToken.IsCancellationRequested)
+            {
+                return Canceled(options.Url, route: resolved.Summary, proxyWasUsed: true);
+            }
+
             WinHttpRequestResult result = ExecuteAttempt(
                 options,
                 destination,
@@ -112,6 +127,13 @@ public static class WinHttpRequestExecutor
         string? proxyEndpoint)
     {
         ArgumentNullException.ThrowIfNull(options);
+
+        if (options.CancellationToken.IsCancellationRequested)
+        {
+            return Canceled(
+                options.Url,
+                proxyWasUsed: !string.IsNullOrWhiteSpace(proxyEndpoint));
+        }
 
         if (!OperatingSystem.IsWindows())
         {
@@ -151,6 +173,11 @@ public static class WinHttpRequestExecutor
         string? proxyEndpoint)
     {
         bool usesProxy = !string.IsNullOrWhiteSpace(proxyEndpoint);
+        if (options.CancellationToken.IsCancellationRequested)
+        {
+            return Canceled(options.Url, route, usesProxy);
+        }
+
         string? proxyName;
         try
         {
@@ -176,12 +203,14 @@ public static class WinHttpRequestExecutor
         if (sessionRaw == nint.Zero)
         {
             int error = Marshal.GetLastWin32Error();
-            return FailureFromNative(
-                error,
-                "WinHTTP 세션을 열지 못했습니다.",
-                usesProxy,
-                route,
-                options.Url);
+            return options.CancellationToken.IsCancellationRequested
+                ? Canceled(options.Url, route, usesProxy)
+                : FailureFromNative(
+                    error,
+                    "WinHTTP 세션을 열지 못했습니다.",
+                    usesProxy,
+                    route,
+                    options.Url);
         }
 
         using SafeWinHttpHandle session = SafeWinHttpHandle.FromRaw(sessionRaw);
@@ -194,12 +223,14 @@ public static class WinHttpRequestExecutor
                 options.TimeoutMilliseconds))
         {
             int error = Marshal.GetLastWin32Error();
-            return FailureFromNative(
-                error,
-                "WinHTTP 요청 제한 시간을 설정하지 못했습니다.",
-                usesProxy,
-                route,
-                options.Url);
+            return options.CancellationToken.IsCancellationRequested
+                ? Canceled(options.Url, route, usesProxy)
+                : FailureFromNative(
+                    error,
+                    "WinHTTP 요청 제한 시간을 설정하지 못했습니다.",
+                    usesProxy,
+                    route,
+                    options.Url);
         }
 
         nint connectRaw = WinHttpNative.WinHttpConnect(
@@ -211,12 +242,14 @@ public static class WinHttpRequestExecutor
         if (connectRaw == nint.Zero)
         {
             int error = Marshal.GetLastWin32Error();
-            return FailureFromNative(
-                error,
-                "대상 호스트 연결 핸들을 만들지 못했습니다.",
-                usesProxy,
-                route,
-                options.Url);
+            return options.CancellationToken.IsCancellationRequested
+                ? Canceled(options.Url, route, usesProxy)
+                : FailureFromNative(
+                    error,
+                    "대상 호스트 연결 핸들을 만들지 못했습니다.",
+                    usesProxy,
+                    route,
+                    options.Url);
         }
 
         using SafeWinHttpHandle connect = SafeWinHttpHandle.FromRaw(connectRaw);
@@ -242,15 +275,25 @@ public static class WinHttpRequestExecutor
         if (requestRaw == nint.Zero)
         {
             int error = Marshal.GetLastWin32Error();
-            return FailureFromNative(
-                error,
-                "WinHTTP 요청 핸들을 만들지 못했습니다.",
-                usesProxy,
-                route,
-                options.Url);
+            return options.CancellationToken.IsCancellationRequested
+                ? Canceled(options.Url, route, usesProxy)
+                : FailureFromNative(
+                    error,
+                    "WinHTTP 요청 핸들을 만들지 못했습니다.",
+                    usesProxy,
+                    route,
+                    options.Url);
         }
 
         using SafeWinHttpHandle request = SafeWinHttpHandle.FromRaw(requestRaw);
+        using CancellationTokenRegistration cancellationRegistration =
+            options.CancellationToken.Register(request.CancelPendingOperation);
+
+        if (options.CancellationToken.IsCancellationRequested)
+        {
+            return Canceled(options.Url, route, usesProxy);
+        }
+
         uint redirectPolicy = WinHttpNative.RedirectPolicyNever;
         if (!WinHttpNative.WinHttpSetOption(
                 request.DangerousGetHandle(),
@@ -259,15 +302,20 @@ public static class WinHttpRequestExecutor
                 sizeof(uint)))
         {
             int error = Marshal.GetLastWin32Error();
-            return FailureFromNative(
-                error,
-                "자동 리다이렉트 차단 정책을 설정하지 못했습니다.",
-                usesProxy,
-                route,
-                options.Url);
+            return options.CancellationToken.IsCancellationRequested
+                ? Canceled(options.Url, route, usesProxy)
+                : FailureFromNative(
+                    error,
+                    "자동 리다이렉트 차단 정책을 설정하지 못했습니다.",
+                    usesProxy,
+                    route,
+                    options.Url);
         }
 
-        return SendAndReceive(options, request, usesProxy, route);
+        WinHttpRequestResult result = SendAndReceive(options, request, usesProxy, route);
+        return options.CancellationToken.IsCancellationRequested
+            ? AsCanceled(result, options.Url)
+            : result;
     }
 
     private static WinHttpRequestResult SendAndReceive(
@@ -284,6 +332,17 @@ public static class WinHttpRequestExecutor
 
         while (true)
         {
+            if (options.CancellationToken.IsCancellationRequested)
+            {
+                return FinishCanceled(
+                    stopwatch,
+                    usesProxy,
+                    route,
+                    authenticationChoice,
+                    authenticationAttempts,
+                    finalUrl: options.Url);
+            }
+
             if (authenticationChoice != ProxyAuthenticationChoice.None)
             {
                 if (!WinHttpNative.WinHttpSetCredentials(
@@ -295,16 +354,24 @@ public static class WinHttpRequestExecutor
                         authParams: nint.Zero))
                 {
                     int error = Marshal.GetLastWin32Error();
-                    return FinishFailure(
-                        stopwatch,
-                        WinHttpRequestStatus.NetworkError,
-                        "현재 Windows 사용자 자격 증명을 프록시 요청에 적용하지 못했습니다.",
-                        error,
-                        usesProxy,
-                        route,
-                        authenticationChoice,
-                        authenticationAttempts,
-                        finalUrl: options.Url);
+                    return options.CancellationToken.IsCancellationRequested
+                        ? FinishCanceled(
+                            stopwatch,
+                            usesProxy,
+                            route,
+                            authenticationChoice,
+                            authenticationAttempts,
+                            finalUrl: options.Url)
+                        : FinishFailure(
+                            stopwatch,
+                            WinHttpRequestStatus.NetworkError,
+                            "현재 Windows 사용자 자격 증명을 프록시 요청에 적용하지 못했습니다.",
+                            error,
+                            usesProxy,
+                            route,
+                            authenticationChoice,
+                            authenticationAttempts,
+                            finalUrl: options.Url);
                 }
             }
 
@@ -318,15 +385,23 @@ public static class WinHttpRequestExecutor
                     0))
             {
                 int error = Marshal.GetLastWin32Error();
-                return FinishNativeFailure(
-                    stopwatch,
-                    error,
-                    "WinHTTP 요청을 전송하지 못했습니다.",
-                    usesProxy,
-                    route,
-                    authenticationChoice,
-                    authenticationAttempts,
-                    finalUrl: options.Url);
+                return options.CancellationToken.IsCancellationRequested
+                    ? FinishCanceled(
+                        stopwatch,
+                        usesProxy,
+                        route,
+                        authenticationChoice,
+                        authenticationAttempts,
+                        finalUrl: options.Url)
+                    : FinishNativeFailure(
+                        stopwatch,
+                        error,
+                        "WinHTTP 요청을 전송하지 못했습니다.",
+                        usesProxy,
+                        route,
+                        authenticationChoice,
+                        authenticationAttempts,
+                        finalUrl: options.Url);
             }
 
             if (!WinHttpNative.WinHttpReceiveResponse(
@@ -334,6 +409,17 @@ public static class WinHttpRequestExecutor
                     nint.Zero))
             {
                 int error = Marshal.GetLastWin32Error();
+                if (options.CancellationToken.IsCancellationRequested)
+                {
+                    return FinishCanceled(
+                        stopwatch,
+                        usesProxy,
+                        route,
+                        authenticationChoice,
+                        authenticationAttempts,
+                        finalUrl: options.Url);
+                }
+
                 if (error == WinHttpNative.ErrorWinHttpResendRequest
                     && resendRequests < MaximumResendRequests)
                 {
@@ -352,12 +438,10 @@ public static class WinHttpRequestExecutor
                     finalUrl: options.Url);
             }
 
-            if (!TryReadStatusCode(request, out int statusCode, out int statusError))
+            if (options.CancellationToken.IsCancellationRequested)
             {
-                return FinishNativeFailure(
+                return FinishCanceled(
                     stopwatch,
-                    statusError,
-                    "HTTP 상태 코드를 읽지 못했습니다.",
                     usesProxy,
                     route,
                     authenticationChoice,
@@ -365,22 +449,54 @@ public static class WinHttpRequestExecutor
                     finalUrl: options.Url);
             }
 
-            if (statusCode == 407)
+            if (!TryReadStatusCode(request, out int statusCode, out int statusError))
             {
-                BodyReadResult challengeBody = ReadBody(
-                    request,
-                    MaximumChallengeBodyBytes);
-                if (!challengeBody.Success)
-                {
-                    return FinishNativeFailure(
+                return options.CancellationToken.IsCancellationRequested
+                    ? FinishCanceled(
                         stopwatch,
-                        challengeBody.Win32ErrorCode,
-                        "프록시 인증 응답 본문을 정리하지 못했습니다.",
+                        usesProxy,
+                        route,
+                        authenticationChoice,
+                        authenticationAttempts,
+                        finalUrl: options.Url)
+                    : FinishNativeFailure(
+                        stopwatch,
+                        statusError,
+                        "HTTP 상태 코드를 읽지 못했습니다.",
                         usesProxy,
                         route,
                         authenticationChoice,
                         authenticationAttempts,
                         finalUrl: options.Url);
+            }
+
+            if (statusCode == 407)
+            {
+                BodyReadResult challengeBody = ReadBody(
+                    request,
+                    MaximumChallengeBodyBytes,
+                    options.CancellationToken);
+                if (!challengeBody.Success)
+                {
+                    return options.CancellationToken.IsCancellationRequested
+                        ? FinishCanceled(
+                            stopwatch,
+                            usesProxy,
+                            route,
+                            authenticationChoice,
+                            authenticationAttempts,
+                            challengeBody.BytesRead,
+                            options.Url)
+                        : FinishNativeFailure(
+                            stopwatch,
+                            challengeBody.Win32ErrorCode,
+                            "프록시 인증 응답 본문을 정리하지 못했습니다.",
+                            usesProxy,
+                            route,
+                            authenticationChoice,
+                            authenticationAttempts,
+                            bytesReceived: challengeBody.BytesRead,
+                            finalUrl: options.Url);
                 }
 
                 if (!ProxyAuthenticationPolicy.CanAttempt(
@@ -408,15 +524,23 @@ public static class WinHttpRequestExecutor
                         out uint authTarget))
                 {
                     int error = Marshal.GetLastWin32Error();
-                    return FinishNativeFailure(
-                        stopwatch,
-                        error,
-                        "프록시가 제공한 인증 방식을 확인하지 못했습니다.",
-                        usesProxy,
-                        route,
-                        authenticationChoice,
-                        authenticationAttempts,
-                        finalUrl: options.Url);
+                    return options.CancellationToken.IsCancellationRequested
+                        ? FinishCanceled(
+                            stopwatch,
+                            usesProxy,
+                            route,
+                            authenticationChoice,
+                            authenticationAttempts,
+                            finalUrl: options.Url)
+                        : FinishNativeFailure(
+                            stopwatch,
+                            error,
+                            "프록시가 제공한 인증 방식을 확인하지 못했습니다.",
+                            usesProxy,
+                            route,
+                            authenticationChoice,
+                            authenticationAttempts,
+                            finalUrl: options.Url);
                 }
 
                 ProxyAuthenticationDecision decision = ProxyAuthenticationPolicy.Select(
@@ -515,20 +639,45 @@ public static class WinHttpRequestExecutor
             }
 
             BodyReadResult body = options.Method == WinHttpRequestMethod.Get
-                ? ReadBody(request, options.MaxResponseBytes)
+                ? ReadBody(request, options.MaxResponseBytes, options.CancellationToken)
                 : BodyReadResult.Empty;
 
             if (!body.Success)
             {
-                return FinishNativeFailure(
+                return options.CancellationToken.IsCancellationRequested
+                    ? FinishCanceled(
+                        stopwatch,
+                        usesProxy,
+                        route,
+                        authenticationChoice,
+                        authenticationAttempts,
+                        body.BytesRead,
+                        options.Url,
+                        timeToFirstByte,
+                        responseHeaders)
+                    : FinishNativeFailure(
+                        stopwatch,
+                        body.Win32ErrorCode,
+                        "응답 본문을 읽지 못했습니다.",
+                        usesProxy,
+                        route,
+                        authenticationChoice,
+                        authenticationAttempts,
+                        statusCode,
+                        body.BytesRead,
+                        options.Url,
+                        timeToFirstByte,
+                        responseHeaders);
+            }
+
+            if (options.CancellationToken.IsCancellationRequested)
+            {
+                return FinishCanceled(
                     stopwatch,
-                    body.Win32ErrorCode,
-                    "응답 본문을 읽지 못했습니다.",
                     usesProxy,
                     route,
                     authenticationChoice,
                     authenticationAttempts,
-                    statusCode,
                     body.BytesRead,
                     options.Url,
                     timeToFirstByte,
@@ -651,7 +800,8 @@ public static class WinHttpRequestExecutor
 
     private static unsafe BodyReadResult ReadBody(
         SafeWinHttpHandle request,
-        long maximumBytes)
+        long maximumBytes,
+        CancellationToken cancellationToken)
     {
         byte[] buffer = new byte[ReadBufferSize];
         List<ThroughputSample> samples = [];
@@ -662,6 +812,23 @@ public static class WinHttpRequestExecutor
 
         while (true)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                AddFinalSample(
+                    samples,
+                    bodyStopwatch.Elapsed,
+                    total,
+                    previousSampleTime,
+                    previousSampleBytes);
+
+                return new BodyReadResult(
+                    Success: false,
+                    BytesRead: total,
+                    LimitReached: false,
+                    Win32ErrorCode: 0,
+                    Samples: samples);
+            }
+
             long remaining = maximumBytes - total;
             if (remaining <= 0)
             {
@@ -890,6 +1057,33 @@ public static class WinHttpRequestExecutor
             errorCode: $"WINHTTP_{errorCode}");
     }
 
+    private static WinHttpRequestResult FinishCanceled(
+        Stopwatch stopwatch,
+        bool proxyWasUsed,
+        ProxyRouteResolution route,
+        ProxyAuthenticationChoice authenticationChoice,
+        int authenticationAttempts,
+        long bytesReceived = 0,
+        string finalUrl = "",
+        TimeSpan? timeToFirstByte = null,
+        IReadOnlyDictionary<string, string>? responseHeaders = null)
+    {
+        return FinishFailure(
+            stopwatch,
+            WinHttpRequestStatus.Canceled,
+            "사용자 취소 요청으로 현재 WinHTTP 요청 핸들을 닫고 측정을 중단했습니다.",
+            null,
+            proxyWasUsed,
+            route,
+            authenticationChoice,
+            authenticationAttempts,
+            bytesReceived: bytesReceived,
+            finalUrl: finalUrl,
+            timeToFirstByte: timeToFirstByte,
+            responseHeaders: responseHeaders,
+            errorCode: "MEASUREMENT_CANCELED");
+    }
+
     private static WinHttpRequestResult FinishFailure(
         Stopwatch stopwatch,
         WinHttpRequestStatus status,
@@ -926,6 +1120,35 @@ public static class WinHttpRequestExecutor
             RedirectLocation = redirectLocation,
             ResponseHeaders = responseHeaders ?? EmptyHeaders,
             ErrorCode = errorCode
+        };
+    }
+
+    private static WinHttpRequestResult Canceled(
+        string finalUrl,
+        ProxyRouteResolution? route = null,
+        bool proxyWasUsed = false)
+    {
+        return Failure(
+            WinHttpRequestStatus.Canceled,
+            "사용자 취소 요청으로 측정을 시작하지 않았거나 현재 요청을 중단했습니다.",
+            proxyWasUsed: proxyWasUsed,
+            route: route,
+            finalUrl: finalUrl,
+            errorCode: "MEASUREMENT_CANCELED");
+    }
+
+    private static WinHttpRequestResult AsCanceled(
+        WinHttpRequestResult result,
+        string fallbackFinalUrl)
+    {
+        return result with
+        {
+            Status = WinHttpRequestStatus.Canceled,
+            Message = "사용자 취소 요청으로 현재 WinHTTP 요청 핸들을 닫고 측정을 중단했습니다.",
+            FinalUrl = string.IsNullOrWhiteSpace(result.FinalUrl)
+                ? fallbackFinalUrl
+                : result.FinalUrl,
+            ErrorCode = "MEASUREMENT_CANCELED"
         };
     }
 
