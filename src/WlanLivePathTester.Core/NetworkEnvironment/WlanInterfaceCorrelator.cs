@@ -73,7 +73,7 @@ public static class WlanInterfaceCorrelator
             if (idMatches.Length > 1)
             {
                 return Multiple(
-                    "같은 인터페이스 ID를 가진 무선 어댑터가 여러 개여서 대응을 확정하지 않았습니다.");
+                    "같은 인터페이스 GUID를 가진 무선 어댑터가 여러 개여서 대응을 확정하지 않았습니다.");
             }
         }
 
@@ -184,7 +184,7 @@ public static class WlanInterfaceCorrelator
         string trimmed = value.Trim().Trim('{', '}');
         return Guid.TryParse(trimmed, out Guid parsed)
             ? parsed.ToString("D")
-            : trimmed.ToLowerInvariant();
+            : null;
     }
 
     private static string NormalizeDescription(string? value) =>
