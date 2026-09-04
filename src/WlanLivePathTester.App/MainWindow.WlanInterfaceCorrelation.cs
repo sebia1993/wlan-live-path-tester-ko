@@ -78,7 +78,7 @@ public partial class MainWindow
             Child = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
-                Text = "먼저 인터페이스 GUID를 정확히 비교하고, GUID를 사용할 수 없을 때만 무선 NIC 설명의 완전 일치를 보조 기준으로 사용합니다. DNS·HTTP·프록시 요청은 발생하지 않습니다."
+                Text = "먼저 인터페이스 GUID를 정확히 비교하고, GUID를 사용할 수 없을 때만 무선 NIC 설명의 완전 일치를 보조 기준으로 사용합니다. GUID 원문은 화면에 표시하거나 보고서에 저장하지 않습니다."
             }
         });
         content.Children.Add(new Border
@@ -135,16 +135,24 @@ public partial class MainWindow
 
         _correlateWlanInterfaceButton.IsEnabled = false;
         SetWlanInterfaceCorrelationResult(
-            "Native WLAN과 로컬 인터페이스 정보를 읽고 있습니다.",
+            "Native WLAN ID와 로컬 인터페이스 정보를 읽고 있습니다.",
             Brushes.DarkSlateGray);
 
         try
         {
-            (WlanReadResult Wlan, LocalNetworkEnvironmentSnapshot Network) data =
-                await Task.Run(() => (
-                    NativeWlanReader.ReadCurrent(),
-                    LocalNetworkEnvironmentReader.ReadCurrent()));
-            WlanSnapshot? connected = data.Wlan.FirstConnectedInterface;
+            (
+                WlanReadResult Wlan,
+                WlanInterfaceIdentityReadResult Identities,
+                LocalNetworkEnvironmentSnapshot Network
+            ) data = await Task.Run(() => (
+                NativeWlanReader.ReadCurrent(),
+                WlanInterfaceIdentityReader.ReadCurrent(),
+                LocalNetworkEnvironmentReader.ReadCurrent()));
+
+            WlanSnapshot? connected =
+                WlanInterfaceIdentityReader.AttachIdentity(
+                    data.Wlan.FirstConnectedInterface,
+                    data.Identities);
             WlanInterfaceCorrelationResult correlation =
                 WlanInterfaceCorrelator.Correlate(
                     connected,
@@ -153,6 +161,7 @@ public partial class MainWindow
             SetWlanInterfaceCorrelationResult(
                 FormatWlanInterfaceCorrelation(
                     data.Wlan,
+                    data.Identities,
                     data.Network,
                     correlation),
                 correlation.IsMatched && correlation.Warnings.Count == 0
@@ -175,14 +184,21 @@ public partial class MainWindow
 
     private static string FormatWlanInterfaceCorrelation(
         WlanReadResult wlanRead,
+        WlanInterfaceIdentityReadResult identityRead,
         LocalNetworkEnvironmentSnapshot network,
         WlanInterfaceCorrelationResult correlation)
     {
         StringBuilder builder = new();
         builder.AppendLine($"Native WLAN 상태: {wlanRead.Status}");
+        builder.AppendLine($"WLAN ID 목록: {(identityRead.IsSuccess ? "확인 성공" : "확인 실패")} · 항목 {identityRead.Interfaces.Count}개");
         builder.AppendLine($"로컬 인터페이스: {network.Adapters.Count}개 / 활성 Wi-Fi: {network.Assessment.ActiveWirelessCount}개");
         builder.AppendLine($"대응 상태: {FormatCorrelationStatus(correlation.Status)}");
         builder.AppendLine(correlation.Message);
+
+        if (!identityRead.IsSuccess)
+        {
+            builder.AppendLine($"GUID 조회 제한: {identityRead.Message}");
+        }
 
         if (correlation.IsMatched)
         {
