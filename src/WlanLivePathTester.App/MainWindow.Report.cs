@@ -11,6 +11,7 @@ using System.Windows.Media;
 using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Core.Reporting;
 using WlanLivePathTester.Core.Wlan;
+using WlanLivePathTester.Windows.Measurements;
 using WlanLivePathTester.Windows.Proxy;
 using WlanLivePathTester.Windows.Wlan;
 
@@ -104,7 +105,7 @@ public partial class MainWindow
             Margin = new Thickness(0, 8, 0, 0),
             Foreground = new SolidColorBrush(Color.FromRgb(86, 101, 115)),
             TextWrapping = TextWrapping.Wrap,
-            Text = "현재 WLAN·프록시 설정, 화면에 남아 있는 측정 결과와 브라우저 관찰 결과를 JSON·CSV·단일 HTML로 저장합니다. 보고서 생성은 네트워크 요청을 만들지 않습니다."
+            Text = "현재 WLAN·프록시 설정, 화면에 남아 있는 진단 문구, 내부·외부 다운로드 구조화 결과와 브라우저 관찰 결과를 JSON·CSV·단일 HTML로 저장합니다. 보고서 생성은 네트워크 요청을 만들지 않습니다."
         });
         content.Children.Add(new Border
         {
@@ -205,6 +206,7 @@ public partial class MainWindow
             builder.AppendLine($"CSV: {Path.GetFileName(export.CsvPath)}");
             builder.AppendLine($"HTML: {Path.GetFileName(export.HtmlPath)}");
             builder.AppendLine($"무결성: {Path.GetFileName(export.Sha256Path)}");
+            builder.AppendLine($"구조화 다운로드 결과: {report.StructuredMeasurements?.Count ?? 0}개");
             builder.AppendLine("외부 전송은 수행하지 않았습니다.");
             SetReportResult(builder.ToString().TrimEnd());
         }
@@ -241,6 +243,10 @@ public partial class MainWindow
         CurrentUserProxySettings proxy = CurrentUserProxySettingsReader.Read();
         IReadOnlyList<ReportTextSection> measurements =
             CaptureMeasurementTexts(generatedAt);
+        IReadOnlyList<ReportMeasurementSection> structuredMeasurements =
+            MeasurementResultHistory.Snapshot()
+                .Select(ReportMeasurementMapper.FromResult)
+                .ToArray();
         ReportObservationSection? observation =
             ReportObservationMapper.FromResult(_lastBrowserObservationResult);
 
@@ -281,7 +287,8 @@ public partial class MainWindow
             wlanSection,
             proxySection,
             measurements,
-            observation);
+            observation,
+            structuredMeasurements);
 
         Version? assemblyVersion =
             Assembly.GetExecutingAssembly().GetName().Version;
@@ -296,14 +303,15 @@ public partial class MainWindow
             DataHandlingStatement: "보고서는 현재 PC에서 생성되며 자동 업로드, 텔레메트리 또는 온라인 분석을 수행하지 않습니다.");
 
         return new LocalDiagnosticReport(
-            SchemaVersion: "1.0",
+            SchemaVersion: "1.1",
             Metadata: metadata,
             Wlan: wlanSection,
             Proxy: proxySection,
             Measurements: measurements,
             BrowserObservation: observation,
             Findings: findings,
-            Limitations: ReportFindingEngine.DefaultLimitations());
+            Limitations: ReportFindingEngine.DefaultLimitations(),
+            StructuredMeasurements: structuredMeasurements);
     }
 
     private IReadOnlyList<ReportTextSection> CaptureMeasurementTexts(
