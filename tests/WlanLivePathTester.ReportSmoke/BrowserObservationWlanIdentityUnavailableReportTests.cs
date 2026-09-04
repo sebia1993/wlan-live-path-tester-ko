@@ -1,3 +1,4 @@
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using WlanLivePathTester.Core.Observation;
@@ -53,8 +54,8 @@ internal static class BrowserObservationWlanIdentityUnavailableReportTests
             report);
         string csv = BrowserObservationSessionReportWriter.RenderCsv(
             report);
-        string html = BrowserObservationSessionReportWriter.RenderHtml(
-            report);
+        string html = WebUtility.HtmlDecode(
+            BrowserObservationSessionReportWriter.RenderHtml(report));
 
         using JsonDocument parsed = JsonDocument.Parse(json);
         Ensure(parsed.RootElement
@@ -91,7 +92,7 @@ internal static class BrowserObservationWlanIdentityUnavailableReportTests
             "통합 HTML용 메시지에 사람이 읽을 수 있는 종료 설명이 필요합니다.");
 
         IReadOnlyList<ReportFinding> findings =
-            ReportFindingEngine.Evaluate(
+            ReportFindingPipeline.Evaluate(
                 HealthyWlan(),
                 HealthyProxy(),
                 Array.Empty<ReportTextSection>(),
@@ -105,6 +106,9 @@ internal static class BrowserObservationWlanIdentityUnavailableReportTests
                 "WLAN 연결 ID",
                 StringComparison.Ordinal),
             "Finding 제목이 WLAN ID 연속성 문제를 직접 설명해야 합니다.");
+        Ensure(!findings.Any(item => item.Code ==
+                "NO_CLEAR_FAILURE_PATTERN"),
+            "구조화 WLAN ID 오류와 일반 무패턴 Finding을 함께 생성하면 안 됩니다.");
         Ensure(!findings.Any(item => item.Code ==
                 "BROWSER_OBSERVATION_ADAPTER_CHANGED"),
             "WLAN ID 미확인을 실제 다른 물리 NIC 변경으로 오인하면 안 됩니다.");
@@ -134,7 +138,8 @@ internal static class BrowserObservationWlanIdentityUnavailableReportTests
 
         string unifiedJson = LocalReportWriter.RenderJson(report);
         string unifiedCsv = LocalReportWriter.RenderCsv(report);
-        string unifiedHtml = LocalReportWriter.RenderHtml(report);
+        string unifiedHtml = WebUtility.HtmlDecode(
+            LocalReportWriter.RenderHtml(report));
         Ensure(unifiedJson.Contains(FindingCode, StringComparison.Ordinal)
                && unifiedCsv.Contains(FindingCode, StringComparison.Ordinal),
             "통합 JSON·CSV에 머신용 WLAN ID Finding 코드가 필요합니다.");
