@@ -1,11 +1,11 @@
 using System.Net.NetworkInformation;
-using System.Runtime.VersionServices;
+using System.Runtime.Versioning;
 using WlanLivePathTester.Core.NetworkEnvironment;
 using WlanLivePathTester.Core.Observation;
 
 namespace WlanLivePathTester.Windows.Observation;
 
-[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+[SupportedOSPlatform("windows")]
 public static class WindowsInterfaceCounterReader
 {
     public static InterfaceCounterReadResult ReadCurrent(
