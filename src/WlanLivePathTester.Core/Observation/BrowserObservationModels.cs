@@ -7,6 +7,9 @@ public enum InterfaceCounterReadStatus
     Success,
     UnsupportedPlatform,
     InterfaceNotFound,
+    PreferredInterfaceNotFound,
+    InterfaceNotOperational,
+    InterfaceAmbiguous,
     StatisticsUnavailable,
     Failed
 }
