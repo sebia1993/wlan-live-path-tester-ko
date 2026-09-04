@@ -7,6 +7,7 @@ public enum BrowserObservationTerminationReason
     CanceledByUser,
     AdapterChanged,
     AdapterUnavailable,
+    WlanIdentityUnavailable,
     CounterProviderMismatch,
     SystemSuspend,
     TimingDiscontinuity,
@@ -66,6 +67,8 @@ public static class BrowserObservationTerminationPolicy
                 "관찰 Wi-Fi 인터페이스 변경",
             BrowserObservationTerminationReason.AdapterUnavailable =>
                 "고정 Wi-Fi 사용 불가",
+            BrowserObservationTerminationReason.WlanIdentityUnavailable =>
+                "WLAN 연결 ID 연속 미확인",
             BrowserObservationTerminationReason.CounterProviderMismatch =>
                 "고정 ID와 카운터 공급자 불일치",
             BrowserObservationTerminationReason.SystemSuspend =>

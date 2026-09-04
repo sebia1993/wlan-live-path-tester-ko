@@ -151,6 +151,8 @@ public sealed class BrowserObservationRunner
                 BrowserObservationTerminationReason.CounterProviderMismatch);
         }
 
+        ObservationWlanIdentityContinuityTracker wlanIdentityTracker =
+            new(binding);
         WlanSnapshot? previousWlan = initialWlan;
         DateTimeOffset startedAt = previousCounter.Timestamp;
         List<BrowserObservationSample> samples = [];
@@ -199,21 +201,41 @@ public sealed class BrowserObservationRunner
                     }
                 }
 
-                ObservationInterfaceContinuityResult wlanContinuity =
-                    ObservationInterfaceBindingPolicy.EvaluateWlan(
-                        binding,
+                int unavailableBeforeObservation =
+                    wlanIdentityTracker.ConsecutiveUnavailableCount;
+                ObservationWlanIdentityContinuityObservation
+                    wlanContinuity = wlanIdentityTracker.Observe(
                         currentWlan);
                 if (!wlanContinuity.ShouldContinue)
                 {
+                    bool interfaceChanged = wlanContinuity.Status
+                        == ObservationWlanIdentityContinuityStatus.Changed;
                     return CreateInterruptedResult(
-                        BrowserObservationStatus.AdapterChanged,
+                        interfaceChanged
+                            ? BrowserObservationStatus.AdapterChanged
+                            : BrowserObservationStatus.AdapterUnavailable,
                         startedAt,
                         samples,
                         initialWlan,
                         wlanContinuity.Message
-                        + " 서로 다른 NIC의 처리량을 한 결과에 섞지 않고 관찰을 종료했습니다.",
-                        progress);
+                        + (interfaceChanged
+                            ? " 서로 다른 NIC의 처리량을 한 결과에 섞지 않고 관찰을 종료했습니다."
+                            : " 고정 카운터는 다른 NIC로 전환하지 않았으며, WLAN 상태 연속성이 확인되지 않은 현재 구간은 읽지 않고 종료했습니다."),
+                        progress,
+                        interfaceChanged
+                            ? BrowserObservationTerminationReason
+                                .AdapterChanged
+                            : BrowserObservationTerminationReason
+                                .WlanIdentityUnavailable);
                 }
+
+                bool wlanIdentityUnavailable = wlanContinuity.Status
+                    == ObservationWlanIdentityContinuityStatus
+                        .TransientlyUnavailable;
+                WlanSnapshot? trustedCurrentWlan =
+                    wlanContinuity.CurrentIdentityAvailable
+                        ? currentWlan
+                        : null;
 
                 InterfaceCounterReadResult currentCounterRead =
                     _runtime.ReadCounter(
@@ -287,7 +309,7 @@ public sealed class BrowserObservationRunner
                         previousCounter,
                         currentCounter,
                         previousWlan,
-                        currentWlan,
+                        trustedCurrentWlan,
                         isBaseline,
                         baselineReceiveMbps,
                         previousAdjustedReceiveMbps);
@@ -301,6 +323,25 @@ public sealed class BrowserObservationRunner
                         initialWlan,
                         "고정된 카운터 인터페이스 ID가 샘플 사이에 변경됐습니다. 해당 구간을 사용하지 않고 관찰을 종료했습니다.",
                         progress);
+                }
+
+                if (wlanIdentityUnavailable)
+                {
+                    sample = sample with
+                    {
+                        Note = AppendObservationNote(
+                            sample.Note,
+                            $"WLAN 연결 ID 일시 미확인 {wlanContinuity.ConsecutiveUnavailableCount}/{wlanContinuity.UnavailableThreshold}; 시작 시 고정한 카운터만 사용")
+                    };
+                }
+                else if (unavailableBeforeObservation > 0)
+                {
+                    sample = sample with
+                    {
+                        Note = AppendObservationNote(
+                            sample.Note,
+                            $"WLAN 연결 ID가 {unavailableBeforeObservation}회 미확인 후 시작 시 고정한 동일 인터페이스로 복구")
+                    };
                 }
 
                 samples.Add(sample);
@@ -337,7 +378,7 @@ public sealed class BrowserObservationRunner
                     message));
 
                 previousCounter = currentCounter;
-                previousWlan = currentWlan;
+                previousWlan = trustedCurrentWlan;
             }
         }
         catch (OperationCanceledException)
@@ -455,6 +496,23 @@ public sealed class BrowserObservationRunner
             message,
             terminationReason
                 ?? BrowserObservationTerminationPolicy.FromStatus(status));
+    }
+
+    private static string AppendObservationNote(
+        string? existing,
+        string addition)
+    {
+        if (string.IsNullOrWhiteSpace(existing))
+        {
+            return addition;
+        }
+
+        if (existing.Contains(addition, StringComparison.Ordinal))
+        {
+            return existing;
+        }
+
+        return existing.TrimEnd() + " " + addition;
     }
 
     private static int CalculateSampleCount(
