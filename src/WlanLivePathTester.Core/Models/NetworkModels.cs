@@ -10,7 +10,10 @@ public enum MeasurementStatus
 {
     NotRun,
     Success,
+    PartialSuccess,
     Failed,
+    TimedOut,
+    Canceled,
     Blocked,
     ProxyAuthenticationRequired,
     PathMismatch

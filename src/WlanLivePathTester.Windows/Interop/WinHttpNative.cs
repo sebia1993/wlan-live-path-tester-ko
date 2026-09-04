@@ -18,8 +18,10 @@ internal static partial class WinHttpNative
     internal const uint OptionRedirectPolicy = 88;
     internal const uint RedirectPolicyNever = 0;
     internal const uint QueryStatusCode = 19;
+    internal const uint QueryCustom = 65535;
     internal const uint QueryFlagNumber = 0x20000000;
 
+    internal const int ErrorInsufficientBuffer = 122;
     internal const int ErrorWinHttpTimeout = 12002;
     internal const int ErrorWinHttpResendRequest = 12032;
 
@@ -175,6 +177,20 @@ internal static partial class WinHttpNative
         uint infoLevel,
         nint name,
         out uint buffer,
+        ref uint bufferLength,
+        nint index);
+
+    [LibraryImport(
+        "winhttp.dll",
+        EntryPoint = "WinHttpQueryHeaders",
+        SetLastError = true,
+        StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpQueryHeadersText(
+        nint request,
+        uint infoLevel,
+        string name,
+        nint buffer,
         ref uint bufferLength,
         nint index);
 
