@@ -1,0 +1,63 @@
+name: Published Release Verification Branch Trigger
+
+on:
+  push:
+    branches:
+      - 'verify-trigger/v*'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: published-release-verify-trigger-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: dispatch-verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Derive and validate tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="${GITHUB_REF_NAME}"
+          prefix='verify-trigger/'
+          if [[ "${branch}" != "${prefix}"* ]]; then
+            echo "Unexpected trigger branch: ${branch}" >&2
+            exit 1
+          fi
+
+          tag="${branch#${prefix}}"
+          if [[ ! "${tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[0-9A-Za-z.-]+$ ]]; then
+            echo "Only prerelease tags are supported: ${tag}" >&2
+            exit 1
+          fi
+
+          echo "VERIFY_TAG=${tag}" >> "${GITHUB_ENV}"
+          echo "Verification tag: ${tag}"
+
+      - name: Dispatch published release verification from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run published-release-verify.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f "tag=${VERIFY_TAG}"
+
+      - name: Record dispatched workflow
+        shell: bash
+        run: |
+          {
+            echo '## Published release verification dispatched'
+            echo
+            echo "- Tag: \`${VERIFY_TAG}\`"
+            echo '- Workflow: `published-release-verify.yml`'
+            echo '- Source ref: `main`'
+          } >> "${GITHUB_STEP_SUMMARY}"
