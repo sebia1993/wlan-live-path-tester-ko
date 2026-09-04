@@ -14,16 +14,14 @@ internal static class BrowserObservationReportPipelineRuntimeTests
         "E1B2C3D4-E5F6-47A8-9123-1234567890AB";
     private const string InterfaceDescription =
         "Synthetic Pipeline Wi-Fi";
-    private const string SecretSsid =
-        "CORP-SECRET-SSID";
-    private const string SecretBssid =
-        "AA:BB:CC:DD:EE:30";
-    private const string SecretEmail =
-        "user@example.invalid";
-    private const string SecretIp =
-        "10.20.30.40";
+    private const string SecretSsid = "CORP-SECRET-SSID";
+    private const string SecretBssid = "AA:BB:CC:DD:EE:30";
+    private const string SecretEmail = "user@example.invalid";
+    private const string SecretIp = "10.20.30.40";
     private const string SecretUrl =
         "https://internal.example.invalid/private.bin";
+    private const string FindingCode =
+        "BROWSER_OBSERVATION_COUNTER_PROVIDER_MISMATCH";
     private static readonly DateTimeOffset Start =
         DateTimeOffset.UnixEpoch.AddDays(4);
 
@@ -68,8 +66,8 @@ internal static class BrowserObservationReportPipelineRuntimeTests
         BrowserObservationSessionReportDocument dedicated =
             BrowserObservationSessionReportWriter.CreateDocument(
                 result,
-                applicationVersion: "0.1.0-test",
-                generatedAt: Start.AddMinutes(1));
+                "0.1.0-test",
+                Start.AddMinutes(1));
         string dedicatedJson =
             BrowserObservationSessionReportWriter.RenderJson(dedicated);
         string dedicatedCsv =
@@ -77,11 +75,10 @@ internal static class BrowserObservationReportPipelineRuntimeTests
         string dedicatedHtml =
             BrowserObservationSessionReportWriter.RenderHtml(dedicated);
 
-        Ensure(dedicated.TerminationReason
-               == "CounterProviderMismatch",
-            "관찰 전용 보고서가 러너 종료 원인을 보존해야 합니다.");
-        Ensure(dedicated.Status == "CounterProviderMismatch",
-            "관찰 전용 보고서가 러너 상태를 보존해야 합니다.");
+        Ensure(dedicated.Status == "CounterProviderMismatch"
+               && dedicated.TerminationReason
+                   == "CounterProviderMismatch",
+            "관찰 전용 보고서가 러너 상태와 종료 원인을 보존해야 합니다.");
         EnsureContainsTermination(
             dedicatedJson,
             dedicatedCsv,
@@ -99,11 +96,10 @@ internal static class BrowserObservationReportPipelineRuntimeTests
             ReportObservationMapper.FromResult(result)
             ?? throw new InvalidOperationException(
                 "러너 결과를 통합 보고서 관찰 섹션으로 매핑해야 합니다.");
-        Ensure(mapped.Status == "CounterProviderMismatch",
-            "통합 보고서 매퍼가 러너 상태를 보존해야 합니다.");
-        Ensure(mapped.TerminationReason
-               == "CounterProviderMismatch",
-            "통합 보고서 매퍼가 구조화 종료 원인을 보존해야 합니다.");
+        Ensure(mapped.Status == "CounterProviderMismatch"
+               && mapped.TerminationReason
+                   == "CounterProviderMismatch",
+            "통합 보고서 매퍼가 러너 상태와 구조화 종료 원인을 보존해야 합니다.");
 
         IReadOnlyList<ReportFinding> findings =
             ReportFindingEngine.Evaluate(
@@ -114,7 +110,7 @@ internal static class BrowserObservationReportPipelineRuntimeTests
                 Array.Empty<ReportMeasurementSection>());
         ReportFinding terminationFinding = findings.Single(finding =>
             finding.Code.Equals(
-                "BROWSER_OBSERVATION_COUNTER_PROVIDER_MISMATCH",
+                FindingCode,
                 StringComparison.Ordinal));
         Ensure(terminationFinding.Severity == "Warning",
             "카운터 공급자 불일치 Finding은 Warning이어야 합니다.");
@@ -131,18 +127,18 @@ internal static class BrowserObservationReportPipelineRuntimeTests
             unifiedCsv,
             unifiedHtml,
             "통합 보고서");
-        Ensure(unifiedJson.Contains(
-                "BROWSER_OBSERVATION_COUNTER_PROVIDER_MISMATCH",
-                StringComparison.Ordinal),
-            "통합 JSON에 종료 원인 Finding 코드가 필요합니다.");
-        Ensure(unifiedCsv.Contains(
-                "BROWSER_OBSERVATION_COUNTER_PROVIDER_MISMATCH",
-                StringComparison.Ordinal),
-            "통합 CSV에 종료 원인 Finding 코드가 필요합니다.");
+        Ensure(unifiedJson.Contains(FindingCode, StringComparison.Ordinal),
+            "통합 JSON에 Finding 코드가 필요합니다.");
+        Ensure(unifiedCsv.Contains(FindingCode, StringComparison.Ordinal),
+            "통합 CSV에 Finding 코드가 필요합니다.");
         Ensure(unifiedHtml.Contains(
-                "BROWSER_OBSERVATION_COUNTER_PROVIDER_MISMATCH",
+                terminationFinding.Title,
                 StringComparison.Ordinal),
-            "통합 HTML에 종료 원인 Finding 코드가 필요합니다.");
+            "통합 HTML에는 고정 코드에 대응하는 사람이 읽을 수 있는 Finding 제목이 필요합니다.");
+        Ensure(unifiedHtml.Contains(
+                terminationFinding.Interpretation,
+                StringComparison.Ordinal),
+            "통합 HTML에는 Finding 해석이 필요합니다.");
         AssertSecretsAbsent(
             string.Join(
                 Environment.NewLine,
@@ -162,8 +158,7 @@ internal static class BrowserObservationReportPipelineRuntimeTests
                 .GetProperty("findings")
                 .EnumerateArray()
                 .Count(item => item.GetProperty("code").GetString()
-                    == "BROWSER_OBSERVATION_COUNTER_PROVIDER_MISMATCH")
-               == 1,
+                    == FindingCode) == 1,
             "통합 JSON에는 해당 종료 Finding이 정확히 한 개여야 합니다.");
     }
 
