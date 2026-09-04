@@ -82,6 +82,10 @@ public static class LocalReportWriter
         AddWlanRows(rows, report.Wlan);
         AddProxyRows(rows, report.Proxy);
         AddMeasurementRows(rows, report.Measurements);
+        AddStructuredMeasurementRows(
+            rows,
+            report.StructuredMeasurements
+                ?? Array.Empty<ReportMeasurementSection>());
         AddObservationRows(rows, report.BrowserObservation);
         AddFindingRows(rows, report.Findings);
         AddLimitationRows(rows, report.Limitations);
@@ -161,10 +165,58 @@ public static class LocalReportWriter
     {
         foreach (ReportTextSection measurement in measurements)
         {
-            string section = $"measurement.{measurement.SectionId}";
+            string section = $"measurementText.{measurement.SectionId}";
             Add(rows, section, "title", measurement.Title);
             Add(rows, section, "capturedAt", Iso(measurement.CapturedAt));
             Add(rows, section, "content", measurement.Content);
+        }
+    }
+
+    private static void AddStructuredMeasurementRows(
+        ICollection<CsvRow> rows,
+        IReadOnlyList<ReportMeasurementSection> measurements)
+    {
+        for (int index = 0; index < measurements.Count; index++)
+        {
+            ReportMeasurementSection measurement = measurements[index];
+            string section = $"structuredMeasurement.{index + 1}";
+            Add(rows, section, "targetName", measurement.TargetName);
+            Add(rows, section, "pathKind", measurement.PathKind);
+            Add(rows, section, "status", measurement.Status);
+            Add(rows, section, "startedAt", Iso(measurement.StartedAt));
+            Add(rows, section, "completedAt", Iso(measurement.CompletedAt));
+            Add(rows, section, "durationSeconds", Number<double>(measurement.DurationSeconds));
+            Add(rows, section, "bytesReceived", Number<long>(measurement.BytesReceived));
+            Add(rows, section, "averageMbps", Number(measurement.AverageMbps));
+            Add(rows, section, "peakMbps", Number(measurement.PeakMbps));
+            Add(rows, section, "timeToFirstByteMilliseconds", Number(measurement.TimeToFirstByteMilliseconds));
+            Add(rows, section, "httpStatusCode", Number(measurement.HttpStatusCode));
+            Add(rows, section, "proxyWasUsed", NullableBoolean(measurement.ProxyWasUsed));
+            Add(rows, section, "streamsRequested", Number<int>(measurement.StreamsRequested));
+            Add(rows, section, "streamsCompleted", Number<int>(measurement.StreamsCompleted));
+            Add(rows, section, "redirectCount", Number<int>(measurement.RedirectCount));
+            Add(rows, section, "finalUrl", measurement.FinalUrl);
+            Add(rows, section, "cacheClassification", measurement.CacheClassification);
+            Add(rows, section, "confidence", measurement.Confidence);
+            Add(rows, section, "confidenceReasons", string.Join(" | ", measurement.ConfidenceReasons));
+            Add(rows, section, "errorCode", measurement.ErrorCode);
+            Add(rows, section, "message", measurement.Message);
+
+            foreach ((string name, string value) in measurement.ResponseMetadata
+                         .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                Add(rows, section, $"responseHeader.{name}", value);
+            }
+
+            for (int sampleIndex = 0; sampleIndex < measurement.Samples.Count; sampleIndex++)
+            {
+                ReportThroughputSample sample = measurement.Samples[sampleIndex];
+                string sampleSection = $"{section}.sample.{sampleIndex + 1}";
+                Add(rows, sampleSection, "streamIndex", Number<int>(sample.StreamIndex));
+                Add(rows, sampleSection, "offsetSeconds", Number<double>(sample.OffsetSeconds));
+                Add(rows, sampleSection, "intervalBytes", Number<long>(sample.IntervalBytes));
+                Add(rows, sampleSection, "mbps", Number<double>(sample.Mbps));
+            }
         }
     }
 
@@ -324,6 +376,11 @@ public static class LocalReportWriter
 
     private static string Boolean(bool value) =>
         value.ToString(CultureInfo.InvariantCulture);
+
+    private static string NullableBoolean(bool? value) =>
+        value.HasValue
+            ? Boolean(value.Value)
+            : string.Empty;
 
     private static string Number<T>(T? value)
         where T : struct, IFormattable =>
