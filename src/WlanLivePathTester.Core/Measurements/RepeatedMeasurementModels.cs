@@ -95,8 +95,10 @@ public sealed record RepeatedMeasurementRun(
 
 public sealed record RepeatedMeasurementSummary(
     int PlannedMeasurementCount,
+    int CompletedMeasurementCount,
     int SuccessfulMeasurementCount,
     int FailedMeasurementCount,
+    int NotCompletedMeasurementCount,
     double? MedianMbps,
     double? MinimumMbps,
     double? MaximumMbps,
@@ -118,7 +120,8 @@ public sealed record RepeatedMeasurementResult(
     RepeatedMeasurementSummary Summary)
 {
     public bool WasCanceled => Runs.Any(run =>
-        run.Result.Status == MeasurementStatus.Canceled);
+        run.Result.Status == MeasurementStatus.Canceled)
+        || Summary.NotCompletedMeasurementCount > 0;
 
     public long TotalBytesReceived => Runs.Sum(run => run.Result.BytesReceived);
 }
