@@ -45,7 +45,8 @@ public sealed record LocalNetworkAdapterSnapshot(
     bool SupportsMulticast,
     bool IsVirtual,
     bool IsVpn,
-    string? ReadError)
+    string? ReadError,
+    string? InterfaceId = null)
 {
     public bool IsUp => OperationalState == NetworkAdapterOperationalState.Up;
 
