@@ -275,7 +275,8 @@ public static class DownloadMeasurementRunner
                 Method: method,
                 TimeoutMilliseconds: checked(target.TimeoutSeconds * 1000),
                 MaxResponseBytes: maxResponseBytes,
-                RequireExpectedPath: true);
+                RequireExpectedPath: true,
+                CancellationToken: cancellationToken);
 
             WinHttpRequestResult response = transport(request);
             if (response.Status != WinHttpRequestStatus.RedirectResponse)
