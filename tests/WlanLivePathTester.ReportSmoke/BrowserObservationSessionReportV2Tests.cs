@@ -27,7 +27,7 @@ internal static class BrowserObservationSessionReportV2Tests
     {
         BrowserObservationSessionReportDocument document =
             BrowserObservationSessionReportWriter.CreateDocument(
-                CreateResult(),
+                CreateSensitiveResult(),
                 "0.1.0-test",
                 DateTimeOffset.UnixEpoch.AddHours(9));
 
@@ -42,25 +42,26 @@ internal static class BrowserObservationSessionReportV2Tests
     private static void VerifyDocumentAndFormats(
         BrowserObservationSessionReportDocument document)
     {
+        BrowserObservationSessionReportSummary summary =
+            document.Summary
+            ?? throw new InvalidOperationException(
+                "합성 관찰 보고서에는 요약이 필요합니다.");
         Ensure(document.SchemaVersion == "1.1",
             "전용 관찰 보고서 스키마가 잘못됐습니다.");
-        Ensure(document.Status == "CounterProviderMismatch",
-            "관찰 상태를 구조화해야 합니다.");
-        Ensure(document.TerminationReason
-               == "CounterProviderMismatch",
-            "구조화 종료 원인을 유지해야 합니다.");
+        Ensure(document.Status == "CounterProviderMismatch"
+               && document.TerminationReason
+                   == "CounterProviderMismatch",
+            "관찰 상태와 구조화 종료 원인을 유지해야 합니다.");
         Ensure(document.TerminationDisplay.Contains(
                 "카운터 공급자",
                 StringComparison.Ordinal),
             "종료 원인의 한국어 설명이 필요합니다.");
         Ensure(!document.SensitiveValuesIncluded,
             "민감값 미포함을 선언해야 합니다.");
-        Ensure(document.Summary?.Samples.Count == 2,
-            "시간축 샘플 두 개가 필요합니다.");
-        Ensure(document.Summary?.BssidChangeCount == 1,
-            "BSSID 원문 없이 변경 횟수를 유지해야 합니다.");
-        Ensure(document.Summary?.CounterResetCount == 1,
-            "카운터 재설정 횟수를 유지해야 합니다.");
+        Ensure(summary.Samples.Count == 1
+               && summary.BssidChangeCount == 1
+               && summary.CounterResetCount == 1,
+            "시간축 상태와 집계 횟수를 유지해야 합니다.");
 
         string json = BrowserObservationSessionReportWriter.RenderJson(
             document);
@@ -77,8 +78,8 @@ internal static class BrowserObservationSessionReportV2Tests
         Ensure(parsed.RootElement
                 .GetProperty("summary")
                 .GetProperty("samples")
-                .GetArrayLength() == 2,
-            "JSON에 시간축 샘플 두 개가 필요합니다.");
+                .GetArrayLength() == 1,
+            "JSON에 시간축 샘플이 필요합니다.");
         Ensure(csv.StartsWith(
                 "section,key,value",
                 StringComparison.Ordinal),
@@ -95,18 +96,15 @@ internal static class BrowserObservationSessionReportV2Tests
             "수식 시작 메모는 CSV에서 비활성화해야 합니다.");
         Ensure(html.StartsWith(
                 "<!doctype html>",
-                StringComparison.OrdinalIgnoreCase),
-            "HTML5 doctype이 필요합니다.");
-        Ensure(html.Contains(
-                "Content-Security-Policy",
-                StringComparison.Ordinal),
-            "HTML에 CSP가 필요합니다.");
-        Ensure(html.Contains(
-                "CounterProviderMismatch",
-                StringComparison.Ordinal),
-            "HTML에 종료 원인이 필요합니다.");
-        Ensure(html.Contains("시간축 샘플", StringComparison.Ordinal),
-            "HTML에 시간축 샘플 표가 필요합니다.");
+                StringComparison.OrdinalIgnoreCase)
+               && html.Contains(
+                   "Content-Security-Policy",
+                   StringComparison.Ordinal)
+               && html.Contains(
+                   "CounterProviderMismatch",
+                   StringComparison.Ordinal)
+               && html.Contains("시간축 샘플", StringComparison.Ordinal),
+            "HTML에 doctype, CSP, 종료 원인과 시간축이 필요합니다.");
         Ensure(!html.Contains("<script", StringComparison.OrdinalIgnoreCase)
                && !html.Contains("<iframe", StringComparison.OrdinalIgnoreCase)
                && !html.Contains("<link", StringComparison.OrdinalIgnoreCase),
@@ -130,10 +128,9 @@ internal static class BrowserObservationSessionReportV2Tests
                 "0.1.0-test",
                 DateTimeOffset.UnixEpoch);
 
-        Ensure(document.TerminationReason == "CanceledByUser",
+        Ensure(document.TerminationReason == "CanceledByUser"
+               && document.TerminationDisplay == "사용자 중지",
             "기존 Canceled 결과는 EffectiveTerminationReason을 사용해야 합니다.");
-        Ensure(document.TerminationDisplay == "사용자 중지",
-            "기존 취소 결과의 한국어 설명이 필요합니다.");
     }
 
     private static void VerifyNonFiniteNumbersAreNormalized()
@@ -161,7 +158,7 @@ internal static class BrowserObservationSessionReportV2Tests
             false,
             false,
             null);
-        BrowserObservationSummary summary = new(
+        BrowserObservationSummary sourceSummary = new(
             startedAt,
             startedAt.AddSeconds(1),
             TimeSpan.FromSeconds(1),
@@ -182,7 +179,7 @@ internal static class BrowserObservationSessionReportV2Tests
             "합성 한계");
         BrowserObservationResult result = new(
             BrowserObservationStatus.PartialSuccess,
-            summary,
+            sourceSummary,
             null,
             "합성 비정상 숫자",
             BrowserObservationTerminationReason.Failed);
@@ -191,16 +188,20 @@ internal static class BrowserObservationSessionReportV2Tests
                 result,
                 "0.1.0-test",
                 DateTimeOffset.UnixEpoch);
+        BrowserObservationSessionReportSummary summary =
+            document.Summary
+            ?? throw new InvalidOperationException(
+                "숫자 정규화 보고서에는 요약이 필요합니다.");
 
-        Ensure(document.Summary?.BaselineReceiveMbps == 0,
+        Ensure(summary.BaselineReceiveMbps == 0,
             "NaN 기준값은 0으로 정규화해야 합니다.");
-        Ensure(document.Summary?.AverageAdjustedReceiveMbps is null
-               && document.Summary.PeakAdjustedReceiveMbps is null,
+        Ensure(summary.AverageAdjustedReceiveMbps is null
+               && summary.PeakAdjustedReceiveMbps is null,
             "무한대 처리량은 null로 제거해야 합니다.");
-        Ensure(document.Summary.TotalReceiveBytes == 0,
+        Ensure(summary.TotalReceiveBytes == 0,
             "음수 총 수신량은 0으로 제한해야 합니다.");
-        Ensure(document.Summary.Samples[0].ReceiveBytesDelta == 0
-               && document.Summary.Samples[0].RawReceiveMbps is null,
+        Ensure(summary.Samples[0].ReceiveBytesDelta == 0
+               && summary.Samples[0].RawReceiveMbps is null,
             "음수 델타와 NaN 샘플 처리량을 정규화해야 합니다.");
         _ = JsonDocument.Parse(
             BrowserObservationSessionReportWriter.RenderJson(document));
@@ -228,11 +229,8 @@ internal static class BrowserObservationSessionReportV2Tests
                 export.HtmlPath,
                 export.Sha256Path
             ];
-
-            Ensure(files.All(File.Exists),
-                "관찰 보고서 네 파일을 모두 생성해야 합니다.");
-            Ensure(export.Sha256.Count == 3,
-                "JSON·CSV·HTML 해시 세 개가 필요합니다.");
+            Ensure(files.All(File.Exists) && export.Sha256.Count == 3,
+                "관찰 보고서 네 파일과 보고서 해시 세 개가 필요합니다.");
 
             foreach ((string fileName, string expectedHash)
                      in export.Sha256)
@@ -264,60 +262,35 @@ internal static class BrowserObservationSessionReportV2Tests
         }
     }
 
-    private static BrowserObservationResult CreateResult()
+    private static BrowserObservationResult CreateSensitiveResult()
     {
         DateTimeOffset startedAt = DateTimeOffset.UnixEpoch
             .AddHours(9);
-        BrowserObservationSample[] samples =
-        [
-            new BrowserObservationSample(
-                startedAt.AddSeconds(1),
-                TimeSpan.FromSeconds(1),
-                true,
-                SecretInterfaceId,
-                125_000,
-                12_500,
-                1,
-                0.1,
-                1,
-                -55,
-                SecretBssid,
-                1_200_000_000,
-                1_200_000_000,
-                false,
-                false,
-                true,
-                false,
-                false,
-                false,
-                false,
-                $"=HYPERLINK(\"{SecretUrl}\",\"{SecretInterfaceId}\")"),
-            new BrowserObservationSample(
-                startedAt.AddSeconds(2),
-                TimeSpan.FromSeconds(1),
-                false,
-                SecretInterfaceId,
-                10_000_000,
-                100_000,
-                80,
-                0.8,
-                79,
-                -56,
-                "AA:BB:CC:DD:EE:00",
-                1_200_000_000,
-                1_200_000_000,
-                false,
-                false,
-                false,
-                false,
-                true,
-                false,
-                false,
-                $"합성 {SecretEmail} {SecretIp} {SecretSsid} {SecretDescription}")
-        ];
+        BrowserObservationSample sample = new(
+            startedAt.AddSeconds(1),
+            TimeSpan.FromSeconds(1),
+            false,
+            SecretInterfaceId,
+            10_000_000,
+            100_000,
+            80,
+            0.8,
+            79,
+            -56,
+            SecretBssid,
+            1_200_000_000,
+            1_200_000_000,
+            false,
+            false,
+            true,
+            false,
+            true,
+            false,
+            false,
+            $"=HYPERLINK(\"{SecretUrl}\",\"{SecretInterfaceId}\") {SecretEmail} {SecretIp} {SecretSsid} {SecretDescription}");
         BrowserObservationSummary summary = new(
             startedAt,
-            startedAt.AddSeconds(2),
+            startedAt.AddSeconds(1),
             TimeSpan.FromSeconds(1),
             1,
             79,
@@ -331,7 +304,7 @@ internal static class BrowserObservationSessionReportV2Tests
             1,
             0,
             ObservationConfidence.Low,
-            samples,
+            [sample],
             $"합성 요약 {SecretEmail} {SecretIp} {SecretUrl}",
             $"합성 한계 {SecretDescription} {SecretInterfaceId}");
         WlanSnapshot initialWlan = new(
