@@ -1,0 +1,63 @@
+name: Scoped Prerelease Trigger
+
+on:
+  push:
+    branches:
+      - "release-trigger/v*-dispatch"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: scoped-prerelease-trigger-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: validate-and-dispatch-manual-prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate owner and trigger branch
+        id: validate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if (-not $env:GITHUB_ACTOR.Equals(
+              $env:GITHUB_REPOSITORY_OWNER,
+              [StringComparison]::OrdinalIgnoreCase)) {
+              throw "Only the repository owner may use a release-trigger branch. Actor=$env:GITHUB_ACTOR"
+          }
+
+          $branch = $env:GITHUB_REF_NAME.Trim()
+          $pattern = '^release-trigger/(?<tag>v(?<version>(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-[0-9A-Za-z.-]+))-dispatch$'
+          if ($branch -notmatch $pattern) {
+              throw "Invalid release trigger branch: $branch"
+          }
+
+          $tag = $Matches['tag']
+          $version = $Matches['version']
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Validated owner-only trigger: Branch=$branch Tag=$tag Version=$version"
+
+      - name: Dispatch verified manual prerelease workflow on main
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.validate.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          gh workflow run manual-prerelease.yml `
+              --repo $env:GITHUB_REPOSITORY `
+              --ref main `
+              -f "tag=$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) {
+              throw "Unable to dispatch manual-prerelease.yml for $env:RELEASE_TAG."
+          }
+
+          Write-Host "Dispatched manual-prerelease.yml on main for $env:RELEASE_TAG" -ForegroundColor Green
