@@ -14,6 +14,15 @@ internal static partial class WinHttpNative
     internal const uint AutoDetectTypeDhcp = 0x00000001;
     internal const uint AutoDetectTypeDnsA = 0x00000002;
 
+    internal const uint FlagSecure = 0x00800000;
+    internal const uint OptionRedirectPolicy = 88;
+    internal const uint RedirectPolicyNever = 0;
+    internal const uint QueryStatusCode = 19;
+    internal const uint QueryFlagNumber = 0x20000000;
+
+    internal const int ErrorWinHttpTimeout = 12002;
+    internal const int ErrorWinHttpResendRequest = 12032;
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct CurrentUserIeProxyConfig
     {
@@ -58,6 +67,18 @@ internal static partial class WinHttpNative
         nint proxyBypass,
         uint flags);
 
+    [LibraryImport(
+        "winhttp.dll",
+        EntryPoint = "WinHttpOpen",
+        SetLastError = true,
+        StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial nint WinHttpOpenWithProxy(
+        string userAgent,
+        uint accessType,
+        string? proxyName,
+        string? proxyBypass,
+        uint flags);
+
     [LibraryImport("winhttp.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool WinHttpSetTimeouts(
@@ -77,6 +98,93 @@ internal static partial class WinHttpNative
         string url,
         ref AutoProxyOptions autoProxyOptions,
         out ProxyInfo proxyInfo);
+
+    [LibraryImport(
+        "winhttp.dll",
+        SetLastError = true,
+        StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial nint WinHttpConnect(
+        nint session,
+        string serverName,
+        ushort serverPort,
+        uint reserved);
+
+    [LibraryImport(
+        "winhttp.dll",
+        SetLastError = true,
+        StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial nint WinHttpOpenRequest(
+        nint connect,
+        string verb,
+        string objectName,
+        nint version,
+        nint referrer,
+        nint acceptTypes,
+        uint flags);
+
+    [LibraryImport("winhttp.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpSetOption(
+        nint handle,
+        uint option,
+        ref uint buffer,
+        uint bufferLength);
+
+    [LibraryImport(
+        "winhttp.dll",
+        SetLastError = true,
+        StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpSetCredentials(
+        nint request,
+        uint authTargets,
+        uint authScheme,
+        string? userName,
+        string? password,
+        nint authParams);
+
+    [LibraryImport("winhttp.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpSendRequest(
+        nint request,
+        nint additionalHeaders,
+        uint additionalHeadersLength,
+        nint optionalData,
+        uint optionalDataLength,
+        uint totalLength,
+        nuint context);
+
+    [LibraryImport("winhttp.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpReceiveResponse(
+        nint request,
+        nint reserved);
+
+    [LibraryImport("winhttp.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpQueryAuthSchemes(
+        nint request,
+        out uint supportedSchemes,
+        out uint firstScheme,
+        out uint authTarget);
+
+    [LibraryImport("winhttp.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpQueryHeaders(
+        nint request,
+        uint infoLevel,
+        nint name,
+        out uint buffer,
+        ref uint bufferLength,
+        nint index);
+
+    [LibraryImport("winhttp.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool WinHttpReadData(
+        nint request,
+        nint buffer,
+        uint bytesToRead,
+        out uint bytesRead);
 
     [LibraryImport("winhttp.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

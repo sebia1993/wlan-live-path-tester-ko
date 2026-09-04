@@ -44,6 +44,9 @@ jobs:
       - name: Run Windows WLAN API smoke test
         run: dotnet run --project .\tests\WlanLivePathTester.WindowsSmoke\WlanLivePathTester.WindowsSmoke.csproj -c Release --no-build
 
+      - name: Run WinHTTP proxy authentication smoke test
+        run: dotnet run --project .\tests\WlanLivePathTester.ProxyAuthSmoke\WlanLivePathTester.ProxyAuthSmoke.csproj -c Release --no-build
+
       - name: Audit repository
         shell: powershell
         run: .\scripts\audit-repository.ps1
