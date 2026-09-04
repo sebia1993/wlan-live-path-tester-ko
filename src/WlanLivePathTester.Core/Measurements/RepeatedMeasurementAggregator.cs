@@ -28,6 +28,10 @@ public static class RepeatedMeasurementAggregator
             .Where(run => run.Result.IsSuccess)
             .Where(run => run.Result.AverageMbps is > 0)
             .ToArray();
+        int failedCount = measuredRuns.Length - successfulRuns.Length;
+        int notCompletedCount = Math.Max(
+            0,
+            plan.RepeatCount - measuredRuns.Length);
         double[] values = successfulRuns
             .Select(run => run.Result.AverageMbps!.Value)
             .Order()
@@ -40,10 +44,21 @@ public static class RepeatedMeasurementAggregator
 
         if (values.Length == 0)
         {
+            List<string> noResultReasons =
+            [
+                "성공한 본 측정 결과가 없어 대표 처리량을 계산하지 않았습니다."
+            ];
+            if (notCompletedCount > 0)
+            {
+                noResultReasons.Add($"계획한 본 측정 중 {notCompletedCount}회는 시작되지 않았거나 완료되지 않았습니다.");
+            }
+
             return new RepeatedMeasurementSummary(
                 PlannedMeasurementCount: plan.RepeatCount,
+                CompletedMeasurementCount: measuredRuns.Length,
                 SuccessfulMeasurementCount: 0,
-                FailedMeasurementCount: measuredRuns.Length,
+                FailedMeasurementCount: failedCount,
+                NotCompletedMeasurementCount: notCompletedCount,
                 MedianMbps: null,
                 MinimumMbps: null,
                 MaximumMbps: null,
@@ -53,10 +68,7 @@ public static class RepeatedMeasurementAggregator
                 RepresentativeSequence: null,
                 CacheHitPossible: cacheHitPossible,
                 Confidence: RepeatedMeasurementConfidence.NotApplicable,
-                ConfidenceReasons:
-                [
-                    "성공한 본 측정 결과가 없어 대표 처리량을 계산하지 않았습니다."
-                ]);
+                ConfidenceReasons: noResultReasons);
         }
 
         double mean = values.Average();
@@ -75,9 +87,6 @@ public static class RepeatedMeasurementAggregator
         bool anyLowIndividual = successfulRuns.Any(run =>
             MeasurementQualityEvaluator.Evaluate(run.Result).Confidence
             == MeasurementConfidence.Low);
-        int failedCount = Math.Max(
-            0,
-            plan.RepeatCount - successfulRuns.Length);
 
         RepeatedMeasurementConfidence confidence;
         if (successfulRuns.Length < 2)
@@ -85,12 +94,19 @@ public static class RepeatedMeasurementAggregator
             confidence = RepeatedMeasurementConfidence.Low;
             reasons.Add("성공한 본 측정이 2회 미만이어서 반복 안정성을 판단할 수 없습니다.");
         }
-        else if (failedCount > 0 || anyLowIndividual)
+        else if (failedCount > 0
+                 || notCompletedCount > 0
+                 || anyLowIndividual)
         {
             confidence = RepeatedMeasurementConfidence.Low;
             if (failedCount > 0)
             {
-                reasons.Add($"계획한 본 측정 중 {failedCount}회가 성공하지 않았습니다.");
+                reasons.Add($"실행된 본 측정 중 {failedCount}회가 성공하지 않았습니다.");
+            }
+
+            if (notCompletedCount > 0)
+            {
+                reasons.Add($"계획한 본 측정 중 {notCompletedCount}회가 완료되지 않았습니다.");
             }
 
             if (anyLowIndividual)
@@ -135,8 +151,10 @@ public static class RepeatedMeasurementAggregator
 
         return new RepeatedMeasurementSummary(
             PlannedMeasurementCount: plan.RepeatCount,
+            CompletedMeasurementCount: measuredRuns.Length,
             SuccessfulMeasurementCount: successfulRuns.Length,
             FailedMeasurementCount: failedCount,
+            NotCompletedMeasurementCount: notCompletedCount,
             MedianMbps: median,
             MinimumMbps: values.Min(),
             MaximumMbps: values.Max(),
