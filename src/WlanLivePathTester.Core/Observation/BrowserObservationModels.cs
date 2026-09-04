@@ -29,7 +29,9 @@ public sealed record InterfaceCounterReadResult(
     InterfaceCounterSnapshot? Snapshot,
     string Message)
 {
-    public bool IsSuccess => Status == InterfaceCounterReadStatus.Success && Snapshot is not null;
+    public bool IsSuccess =>
+        Status == InterfaceCounterReadStatus.Success
+        && Snapshot is not null;
 }
 
 public enum BrowserObservationStatus
@@ -130,6 +132,26 @@ public sealed record BrowserObservationResult(
     WlanSnapshot? InitialWlan,
     string Message)
 {
+    public BrowserObservationResult(
+        BrowserObservationStatus status,
+        BrowserObservationSummary? summary,
+        WlanSnapshot? initialWlan,
+        string message,
+        BrowserObservationTerminationReason terminationReason)
+        : this(status, summary, initialWlan, message)
+    {
+        TerminationReason = terminationReason;
+    }
+
+    public BrowserObservationTerminationReason TerminationReason
+    {
+        get;
+        init;
+    } = BrowserObservationTerminationReason.None;
+
+    public BrowserObservationTerminationReason EffectiveTerminationReason =>
+        BrowserObservationTerminationPolicy.Resolve(this);
+
     public bool IsSuccess => Status is BrowserObservationStatus.Success
         or BrowserObservationStatus.PartialSuccess;
 }
