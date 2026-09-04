@@ -67,6 +67,8 @@ public static class TargetValidator
             errors.Add("최대 리다이렉트 수는 0~10 범위여야 합니다.");
         }
 
+        errors.AddRange(TargetHostPolicy.ValidateConfiguredHosts(target));
+
         if (target.PathKind == NetworkPathKind.External)
         {
             if (IsLocalHostName(uri))
