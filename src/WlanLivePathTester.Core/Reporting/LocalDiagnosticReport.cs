@@ -109,7 +109,14 @@ public sealed record ReportObservationSection(
     string Confidence,
     string Message,
     string Limitation,
-    IReadOnlyList<ReportObservationSample> Samples);
+    IReadOnlyList<ReportObservationSample> Samples)
+{
+    public string? TerminationReason
+    {
+        get;
+        init;
+    }
+}
 
 public sealed record ReportObservationSample(
     DateTimeOffset Timestamp,
@@ -255,6 +262,8 @@ public static class ReportObservationMapper
             .ToArray()
             ?? Array.Empty<ReportObservationSample>();
 
+        BrowserObservationTerminationReason terminationReason =
+            result.EffectiveTerminationReason;
         return new ReportObservationSection(
             Status: result.Status.ToString(),
             StartedAt: summary?.StartedAt,
@@ -275,7 +284,13 @@ public static class ReportObservationMapper
             Message: SensitiveDataRedactor.RedactText(result.Message) ?? string.Empty,
             Limitation: SensitiveDataRedactor.RedactText(summary?.Limitation)
                 ?? "Wi-Fi 인터페이스 전체 트래픽이므로 다른 프로그램의 통신이 포함될 수 있습니다.",
-            Samples: samples);
+            Samples: samples)
+        {
+            TerminationReason = terminationReason
+                == BrowserObservationTerminationReason.None
+                    ? null
+                    : terminationReason.ToString()
+        };
     }
 
     private static double? ToMbps(ulong? bitsPerSecond) =>
