@@ -67,11 +67,18 @@ public static class TargetValidator
             errors.Add("최대 리다이렉트 수는 0~10 범위여야 합니다.");
         }
 
-        if (target.PathKind == NetworkPathKind.External
-            && IPAddress.TryParse(uri.Host, out IPAddress? address)
-            && IsLocalOrPrivate(address))
+        if (target.PathKind == NetworkPathKind.External)
         {
-            errors.Add("외부 측정 대상에 로컬·사설·링크 로컬 IP를 사용할 수 없습니다.");
+            if (IsLocalHostName(uri))
+            {
+                errors.Add("외부 측정 대상에 localhost, .local 또는 점이 없는 내부 호스트 이름을 사용할 수 없습니다.");
+            }
+
+            if (IPAddress.TryParse(uri.Host, out IPAddress? address)
+                && IsLocalOrPrivate(address))
+            {
+                errors.Add("외부 측정 대상에 로컬·사설·링크 로컬 IP를 사용할 수 없습니다.");
+            }
         }
 
         return errors;
@@ -91,17 +98,40 @@ public static class TargetValidator
             return true;
         }
 
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            byte[] ipv6 = address.GetAddressBytes();
+            return (ipv6[0] & 0xFE) == 0xFC;
+        }
+
         if (address.AddressFamily != AddressFamily.InterNetwork)
         {
             return false;
         }
 
         byte[] bytes = address.GetAddressBytes();
-        return bytes[0] == 10
+        return bytes[0] == 0
+            || bytes[0] == 10
             || bytes[0] == 127
+            || (bytes[0] == 100 && bytes[1] is >= 64 and <= 127)
             || (bytes[0] == 169 && bytes[1] == 254)
             || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
             || (bytes[0] == 192 && bytes[1] == 168)
+            || (bytes[0] == 198 && bytes[1] is 18 or 19)
             || bytes[0] >= 224;
+    }
+
+    private static bool IsLocalHostName(Uri uri)
+    {
+        if (uri.HostNameType != UriHostNameType.Dns)
+        {
+            return false;
+        }
+
+        string host = uri.IdnHost;
+        return host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase)
+            || !host.Contains('.', StringComparison.Ordinal);
     }
 }

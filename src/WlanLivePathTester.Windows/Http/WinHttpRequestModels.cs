@@ -1,3 +1,4 @@
+using WlanLivePathTester.Core.Measurements;
 using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Windows.Proxy;
 
@@ -20,9 +21,12 @@ public enum WinHttpRequestStatus
     ProxyAuthenticationFailed,
     ServerAuthenticationRequired,
     RedirectResponse,
+    RedirectDenied,
+    RedirectLimitExceeded,
     HttpErrorResponse,
     ResponseLimitReached,
     TimedOut,
+    Canceled,
     NetworkError
 }
 
@@ -54,5 +58,21 @@ public sealed record WinHttpRequestResult(
     ProxyRouteResolution? Route,
     string Message)
 {
-    public bool IsSuccess => Status == WinHttpRequestStatus.Success;
+    public bool IsSuccess =>
+        Status is WinHttpRequestStatus.Success
+            or WinHttpRequestStatus.ResponseLimitReached;
+
+    public TimeSpan? TimeToFirstByte { get; init; }
+
+    public string FinalUrl { get; init; } = string.Empty;
+
+    public string? RedirectLocation { get; init; }
+
+    public string? ErrorCode { get; init; }
+
+    public IReadOnlyDictionary<string, string> ResponseHeaders { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<ThroughputSample> ThroughputSamples { get; init; } =
+        Array.Empty<ThroughputSample>();
 }

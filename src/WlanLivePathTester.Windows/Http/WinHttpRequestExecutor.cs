@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using WlanLivePathTester.Core.Http;
+using WlanLivePathTester.Core.Measurements;
 using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Windows.Interop;
 using WlanLivePathTester.Windows.Proxy;
@@ -12,6 +13,19 @@ namespace WlanLivePathTester.Windows.Http;
 [SupportedOSPlatform("windows")]
 public static class WinHttpRequestExecutor
 {
+    private static readonly string[] SelectedHeaderNames =
+    [
+        "Age",
+        "Via",
+        "Cache-Status",
+        "X-Cache",
+        "Content-Length",
+        "Content-Range",
+        "Location",
+        "ETag",
+        "Last-Modified"
+    ];
+
     private const string UserAgent = "WlanLivePathTester/0.1";
     private const int MinimumTimeoutMilliseconds = 1000;
     private const int MaximumTimeoutMilliseconds = 300000;
@@ -20,6 +34,7 @@ public static class WinHttpRequestExecutor
     private const int MaximumResendRequests = 2;
     private const int MaximumProxyAuthenticationAttempts = 1;
     private const int ReadBufferSize = 64 * 1024;
+    private static readonly TimeSpan SampleInterval = TimeSpan.FromSeconds(1);
 
     public static WinHttpRequestResult Execute(WinHttpRequestOptions options)
     {
@@ -48,7 +63,8 @@ public static class WinHttpRequestExecutor
                 WinHttpRequestStatus.ProxyResolutionFailed,
                 resolved.Summary.Message,
                 resolved.Summary.Win32ErrorCode,
-                route: resolved.Summary);
+                route: resolved.Summary,
+                finalUrl: options.Url);
         }
 
         if (options.RequireExpectedPath
@@ -57,7 +73,8 @@ public static class WinHttpRequestExecutor
             return Failure(
                 WinHttpRequestStatus.PathMismatch,
                 "대상 URL의 프록시 경로가 선택한 내부망·외부망 기대 경로와 일치하지 않아 요청을 보내지 않았습니다.",
-                route: resolved.Summary);
+                route: resolved.Summary,
+                finalUrl: options.Url);
         }
 
         if (resolved.Selection.RouteKind == ProxyRouteKind.Direct)
@@ -86,7 +103,8 @@ public static class WinHttpRequestExecutor
         return lastFailure ?? Failure(
             WinHttpRequestStatus.ProxyResolutionFailed,
             "사용할 수 있는 프록시 후보가 없습니다.",
-            route: resolved.Summary);
+            route: resolved.Summary,
+            finalUrl: options.Url);
     }
 
     internal static WinHttpRequestResult ExecuteExplicitForSmoke(
@@ -144,7 +162,8 @@ public static class WinHttpRequestExecutor
                 WinHttpRequestStatus.InvalidRequest,
                 "프록시 주소 형식을 해석하지 못해 요청을 보내지 않았습니다.",
                 proxyWasUsed: usesProxy,
-                route: route);
+                route: route,
+                finalUrl: options.Url);
         }
 
         nint sessionRaw = WinHttpNative.WinHttpOpenWithProxy(
@@ -161,7 +180,8 @@ public static class WinHttpRequestExecutor
                 error,
                 "WinHTTP 세션을 열지 못했습니다.",
                 usesProxy,
-                route);
+                route,
+                options.Url);
         }
 
         using SafeWinHttpHandle session = SafeWinHttpHandle.FromRaw(sessionRaw);
@@ -178,7 +198,8 @@ public static class WinHttpRequestExecutor
                 error,
                 "WinHTTP 요청 제한 시간을 설정하지 못했습니다.",
                 usesProxy,
-                route);
+                route,
+                options.Url);
         }
 
         nint connectRaw = WinHttpNative.WinHttpConnect(
@@ -194,7 +215,8 @@ public static class WinHttpRequestExecutor
                 error,
                 "대상 호스트 연결 핸들을 만들지 못했습니다.",
                 usesProxy,
-                route);
+                route,
+                options.Url);
         }
 
         using SafeWinHttpHandle connect = SafeWinHttpHandle.FromRaw(connectRaw);
@@ -224,7 +246,8 @@ public static class WinHttpRequestExecutor
                 error,
                 "WinHTTP 요청 핸들을 만들지 못했습니다.",
                 usesProxy,
-                route);
+                route,
+                options.Url);
         }
 
         using SafeWinHttpHandle request = SafeWinHttpHandle.FromRaw(requestRaw);
@@ -240,7 +263,8 @@ public static class WinHttpRequestExecutor
                 error,
                 "자동 리다이렉트 차단 정책을 설정하지 못했습니다.",
                 usesProxy,
-                route);
+                route,
+                options.Url);
         }
 
         return SendAndReceive(options, request, usesProxy, route);
@@ -279,7 +303,8 @@ public static class WinHttpRequestExecutor
                         usesProxy,
                         route,
                         authenticationChoice,
-                        authenticationAttempts);
+                        authenticationAttempts,
+                        finalUrl: options.Url);
                 }
             }
 
@@ -300,7 +325,8 @@ public static class WinHttpRequestExecutor
                     usesProxy,
                     route,
                     authenticationChoice,
-                    authenticationAttempts);
+                    authenticationAttempts,
+                    finalUrl: options.Url);
             }
 
             if (!WinHttpNative.WinHttpReceiveResponse(
@@ -322,7 +348,8 @@ public static class WinHttpRequestExecutor
                     usesProxy,
                     route,
                     authenticationChoice,
-                    authenticationAttempts);
+                    authenticationAttempts,
+                    finalUrl: options.Url);
             }
 
             if (!TryReadStatusCode(request, out int statusCode, out int statusError))
@@ -334,7 +361,8 @@ public static class WinHttpRequestExecutor
                     usesProxy,
                     route,
                     authenticationChoice,
-                    authenticationAttempts);
+                    authenticationAttempts,
+                    finalUrl: options.Url);
             }
 
             if (statusCode == 407)
@@ -351,10 +379,13 @@ public static class WinHttpRequestExecutor
                         usesProxy,
                         route,
                         authenticationChoice,
-                        authenticationAttempts);
+                        authenticationAttempts,
+                        finalUrl: options.Url);
                 }
 
-                if (authenticationAttempts >= MaximumProxyAuthenticationAttempts)
+                if (!ProxyAuthenticationPolicy.CanAttempt(
+                        authenticationAttempts,
+                        MaximumProxyAuthenticationAttempts))
                 {
                     return FinishFailure(
                         stopwatch,
@@ -365,7 +396,9 @@ public static class WinHttpRequestExecutor
                         route,
                         authenticationChoice,
                         authenticationAttempts,
-                        statusCode);
+                        statusCode,
+                        finalUrl: options.Url,
+                        errorCode: "PROXY_AUTHENTICATION_FAILED");
                 }
 
                 if (!WinHttpNative.WinHttpQueryAuthSchemes(
@@ -382,7 +415,8 @@ public static class WinHttpRequestExecutor
                         usesProxy,
                         route,
                         authenticationChoice,
-                        authenticationAttempts);
+                        authenticationAttempts,
+                        finalUrl: options.Url);
                 }
 
                 ProxyAuthenticationDecision decision = ProxyAuthenticationPolicy.Select(
@@ -401,7 +435,9 @@ public static class WinHttpRequestExecutor
                         route,
                         ProxyAuthenticationChoice.None,
                         authenticationAttempts,
-                        statusCode);
+                        statusCode,
+                        finalUrl: options.Url,
+                        errorCode: "PROXY_AUTHENTICATION_UNSUPPORTED");
                 }
 
                 authenticationChoice = decision.Choice;
@@ -409,6 +445,11 @@ public static class WinHttpRequestExecutor
                 authenticationAttempts++;
                 continue;
             }
+
+            TimeSpan timeToFirstByte = stopwatch.Elapsed;
+            IReadOnlyDictionary<string, string> responseHeaders =
+                ReadSelectedHeaders(request);
+            string? redirectLocation = GetHeader(responseHeaders, "Location");
 
             if (statusCode == 401)
             {
@@ -421,7 +462,11 @@ public static class WinHttpRequestExecutor
                     route,
                     authenticationChoice,
                     authenticationAttempts,
-                    statusCode);
+                    statusCode,
+                    finalUrl: options.Url,
+                    timeToFirstByte: timeToFirstByte,
+                    responseHeaders: responseHeaders,
+                    errorCode: "SERVER_AUTHENTICATION_REQUIRED");
             }
 
             if (statusCode is >= 300 and < 400)
@@ -429,17 +474,30 @@ public static class WinHttpRequestExecutor
                 return FinishFailure(
                     stopwatch,
                     WinHttpRequestStatus.RedirectResponse,
-                    "리다이렉트 응답을 받았습니다. 보안을 위해 자동 이동하지 않았습니다.",
+                    "리다이렉트 응답을 받았습니다. 상위 측정 계층에서 새 URL을 다시 검증합니다.",
                     null,
                     usesProxy,
                     route,
                     authenticationChoice,
                     authenticationAttempts,
-                    statusCode);
+                    statusCode,
+                    finalUrl: options.Url,
+                    timeToFirstByte: timeToFirstByte,
+                    redirectLocation: redirectLocation,
+                    responseHeaders: responseHeaders,
+                    errorCode: "HTTP_REDIRECT");
             }
 
             if (statusCode is < 200 or >= 400)
             {
+                string errorCode = statusCode switch
+                {
+                    403 => "HTTP_403",
+                    407 => "HTTP_407",
+                    429 => "HTTP_429",
+                    _ => $"HTTP_{statusCode}"
+                };
+
                 return FinishFailure(
                     stopwatch,
                     WinHttpRequestStatus.HttpErrorResponse,
@@ -449,7 +507,11 @@ public static class WinHttpRequestExecutor
                     route,
                     authenticationChoice,
                     authenticationAttempts,
-                    statusCode);
+                    statusCode,
+                    finalUrl: options.Url,
+                    timeToFirstByte: timeToFirstByte,
+                    responseHeaders: responseHeaders,
+                    errorCode: errorCode);
             }
 
             BodyReadResult body = options.Method == WinHttpRequestMethod.Get
@@ -467,7 +529,10 @@ public static class WinHttpRequestExecutor
                     authenticationChoice,
                     authenticationAttempts,
                     statusCode,
-                    body.BytesRead);
+                    body.BytesRead,
+                    options.Url,
+                    timeToFirstByte,
+                    responseHeaders);
             }
 
             stopwatch.Stop();
@@ -488,7 +553,13 @@ public static class WinHttpRequestExecutor
                 Route: route,
                 Message: body.LimitReached
                     ? "설정된 최대 수신 바이트에 도달해 응답 본문 읽기를 중단했습니다. 수신 데이터는 저장하지 않았습니다."
-                    : "WinHTTP 요청을 완료했습니다. 수신 데이터는 저장하지 않았습니다.");
+                    : "WinHTTP 요청을 완료했습니다. 수신 데이터는 저장하지 않았습니다.")
+            {
+                TimeToFirstByte = timeToFirstByte,
+                FinalUrl = options.Url,
+                ResponseHeaders = responseHeaders,
+                ThroughputSamples = body.Samples
+            };
         }
     }
 
@@ -512,23 +583,101 @@ public static class WinHttpRequestExecutor
         return success;
     }
 
+    private static IReadOnlyDictionary<string, string> ReadSelectedHeaders(
+        SafeWinHttpHandle request)
+    {
+        Dictionary<string, string> headers =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string headerName in SelectedHeaderNames)
+        {
+            string? value = TryReadHeader(request, headerName);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                headers[headerName] = value.Trim();
+            }
+        }
+
+        return headers;
+    }
+
+    private static string? TryReadHeader(
+        SafeWinHttpHandle request,
+        string headerName)
+    {
+        uint bufferLength = 0;
+        _ = WinHttpNative.WinHttpQueryHeadersText(
+            request.DangerousGetHandle(),
+            WinHttpNative.QueryCustom,
+            headerName,
+            nint.Zero,
+            ref bufferLength,
+            nint.Zero);
+
+        int firstError = Marshal.GetLastWin32Error();
+        if (firstError != WinHttpNative.ErrorInsufficientBuffer
+            || bufferLength == 0
+            || bufferLength > 1024 * 1024)
+        {
+            return null;
+        }
+
+        nint buffer = Marshal.AllocHGlobal(checked((int)bufferLength));
+        try
+        {
+            if (!WinHttpNative.WinHttpQueryHeadersText(
+                    request.DangerousGetHandle(),
+                    WinHttpNative.QueryCustom,
+                    headerName,
+                    buffer,
+                    ref bufferLength,
+                    nint.Zero))
+            {
+                return null;
+            }
+
+            return Marshal.PtrToStringUni(buffer);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    private static string? GetHeader(
+        IReadOnlyDictionary<string, string> headers,
+        string name) =>
+        headers.TryGetValue(name, out string? value) ? value : null;
+
     private static unsafe BodyReadResult ReadBody(
         SafeWinHttpHandle request,
         long maximumBytes)
     {
         byte[] buffer = new byte[ReadBufferSize];
+        List<ThroughputSample> samples = [];
+        Stopwatch bodyStopwatch = Stopwatch.StartNew();
         long total = 0;
+        long previousSampleBytes = 0;
+        TimeSpan previousSampleTime = TimeSpan.Zero;
 
         while (true)
         {
             long remaining = maximumBytes - total;
             if (remaining <= 0)
             {
+                AddFinalSample(
+                    samples,
+                    bodyStopwatch.Elapsed,
+                    total,
+                    previousSampleTime,
+                    previousSampleBytes);
+
                 return new BodyReadResult(
                     Success: true,
                     BytesRead: total,
                     LimitReached: true,
-                    Win32ErrorCode: 0);
+                    Win32ErrorCode: 0,
+                    Samples: samples);
             }
 
             uint bytesToRead = checked((uint)Math.Min(buffer.Length, remaining));
@@ -541,25 +690,83 @@ public static class WinHttpRequestExecutor
                         bytesToRead,
                         out bytesRead))
                 {
+                    AddFinalSample(
+                        samples,
+                        bodyStopwatch.Elapsed,
+                        total,
+                        previousSampleTime,
+                        previousSampleBytes);
+
                     return new BodyReadResult(
                         Success: false,
                         BytesRead: total,
                         LimitReached: false,
-                        Win32ErrorCode: Marshal.GetLastWin32Error());
+                        Win32ErrorCode: Marshal.GetLastWin32Error(),
+                        Samples: samples);
                 }
             }
 
             if (bytesRead == 0)
             {
+                AddFinalSample(
+                    samples,
+                    bodyStopwatch.Elapsed,
+                    total,
+                    previousSampleTime,
+                    previousSampleBytes);
+
                 return new BodyReadResult(
                     Success: true,
                     BytesRead: total,
                     LimitReached: false,
-                    Win32ErrorCode: 0);
+                    Win32ErrorCode: 0,
+                    Samples: samples);
             }
 
             total = checked(total + bytesRead);
+            TimeSpan elapsed = bodyStopwatch.Elapsed;
+            if (elapsed - previousSampleTime >= SampleInterval)
+            {
+                AddSample(
+                    samples,
+                    elapsed,
+                    total - previousSampleBytes,
+                    elapsed - previousSampleTime);
+                previousSampleBytes = total;
+                previousSampleTime = elapsed;
+            }
         }
+    }
+
+    private static void AddFinalSample(
+        ICollection<ThroughputSample> samples,
+        TimeSpan elapsed,
+        long totalBytes,
+        TimeSpan previousTime,
+        long previousBytes)
+    {
+        long intervalBytes = totalBytes - previousBytes;
+        if (intervalBytes <= 0)
+        {
+            return;
+        }
+
+        AddSample(samples, elapsed, intervalBytes, elapsed - previousTime);
+    }
+
+    private static void AddSample(
+        ICollection<ThroughputSample> samples,
+        TimeSpan offset,
+        long intervalBytes,
+        TimeSpan interval)
+    {
+        double seconds = Math.Max(interval.TotalSeconds, 0.001);
+        double mbps = intervalBytes * 8d / seconds / 1_000_000d;
+        samples.Add(new ThroughputSample(
+            StreamIndex: 0,
+            Offset: offset,
+            IntervalBytes: intervalBytes,
+            Mbps: mbps));
     }
 
     private static bool TryValidate(
@@ -635,7 +842,8 @@ public static class WinHttpRequestExecutor
         int errorCode,
         string context,
         bool proxyWasUsed,
-        ProxyRouteResolution? route)
+        ProxyRouteResolution? route,
+        string finalUrl)
     {
         return Failure(
             errorCode == WinHttpNative.ErrorWinHttpTimeout
@@ -644,7 +852,9 @@ public static class WinHttpRequestExecutor
             $"{context} WinHTTP 오류 {errorCode}: {new Win32Exception(errorCode).Message}",
             errorCode,
             proxyWasUsed,
-            route);
+            route,
+            finalUrl,
+            errorCode: $"WINHTTP_{errorCode}");
     }
 
     private static WinHttpRequestResult FinishNativeFailure(
@@ -656,7 +866,10 @@ public static class WinHttpRequestExecutor
         ProxyAuthenticationChoice authenticationChoice,
         int authenticationAttempts,
         int? httpStatusCode = null,
-        long bytesReceived = 0)
+        long bytesReceived = 0,
+        string finalUrl = "",
+        TimeSpan? timeToFirstByte = null,
+        IReadOnlyDictionary<string, string>? responseHeaders = null)
     {
         return FinishFailure(
             stopwatch,
@@ -670,7 +883,11 @@ public static class WinHttpRequestExecutor
             authenticationChoice,
             authenticationAttempts,
             httpStatusCode,
-            bytesReceived);
+            bytesReceived,
+            finalUrl,
+            timeToFirstByte,
+            responseHeaders: responseHeaders,
+            errorCode: $"WINHTTP_{errorCode}");
     }
 
     private static WinHttpRequestResult FinishFailure(
@@ -683,7 +900,12 @@ public static class WinHttpRequestExecutor
         ProxyAuthenticationChoice authenticationChoice,
         int authenticationAttempts,
         int? httpStatusCode = null,
-        long bytesReceived = 0)
+        long bytesReceived = 0,
+        string finalUrl = "",
+        TimeSpan? timeToFirstByte = null,
+        string? redirectLocation = null,
+        IReadOnlyDictionary<string, string>? responseHeaders = null,
+        string? errorCode = null)
     {
         stopwatch.Stop();
         return new WinHttpRequestResult(
@@ -697,7 +919,14 @@ public static class WinHttpRequestExecutor
             ResponseWasTruncated: false,
             Win32ErrorCode: win32ErrorCode,
             Route: route,
-            Message: message);
+            Message: message)
+        {
+            TimeToFirstByte = timeToFirstByte,
+            FinalUrl = finalUrl,
+            RedirectLocation = redirectLocation,
+            ResponseHeaders = responseHeaders ?? EmptyHeaders,
+            ErrorCode = errorCode
+        };
     }
 
     private static WinHttpRequestResult Failure(
@@ -705,7 +934,9 @@ public static class WinHttpRequestExecutor
         string message,
         int? win32ErrorCode = null,
         bool proxyWasUsed = false,
-        ProxyRouteResolution? route = null)
+        ProxyRouteResolution? route = null,
+        string finalUrl = "",
+        string? errorCode = null)
     {
         return new WinHttpRequestResult(
             Status: status,
@@ -718,7 +949,13 @@ public static class WinHttpRequestExecutor
             ResponseWasTruncated: false,
             Win32ErrorCode: win32ErrorCode,
             Route: route,
-            Message: message);
+            Message: message)
+        {
+            FinalUrl = finalUrl,
+            ErrorCode = errorCode,
+            ResponseHeaders = EmptyHeaders,
+            ThroughputSamples = EmptySamples
+        };
     }
 
     private static ProxyAuthenticationMethod ToPublicAuthenticationMethod(
@@ -732,16 +969,24 @@ public static class WinHttpRequestExecutor
         };
     }
 
+    private static IReadOnlyDictionary<string, string> EmptyHeaders { get; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<ThroughputSample> EmptySamples { get; } =
+        Array.Empty<ThroughputSample>();
+
     private sealed record BodyReadResult(
         bool Success,
         long BytesRead,
         bool LimitReached,
-        int Win32ErrorCode)
+        int Win32ErrorCode,
+        IReadOnlyList<ThroughputSample> Samples)
     {
         internal static BodyReadResult Empty { get; } = new(
             Success: true,
             BytesRead: 0,
             LimitReached: false,
-            Win32ErrorCode: 0);
+            Win32ErrorCode: 0,
+            Samples: EmptySamples);
     }
 }
