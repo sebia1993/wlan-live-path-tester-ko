@@ -46,12 +46,18 @@ public sealed class BrowserObservationRunner
         progress?.Report(new BrowserObservationProgress(
             BrowserObservationPhase.Preparing,
             TimeSpan.Zero,
-            TimeSpan.FromSeconds(options.BaselineSeconds + options.ObservationSeconds),
+            TimeSpan.FromSeconds(
+                options.BaselineSeconds + options.ObservationSeconds),
             null,
-            "현재 WLAN 연결과 Wi-Fi 인터페이스 카운터를 확인하고 있습니다."));
+            "현재 WLAN 연결과 정확히 대응되는 Wi-Fi 인터페이스 카운터를 확인하고 있습니다."));
 
         WlanReadResult initialWlanRead = NativeWlanReader.ReadCurrent();
-        WlanSnapshot? initialWlan = initialWlanRead.FirstConnectedInterface;
+        WlanInterfaceIdentityReadResult identityRead =
+            WlanInterfaceIdentityReader.ReadCurrent();
+        WlanSnapshot? initialWlan =
+            WlanInterfaceIdentityReader.AttachIdentity(
+                initialWlanRead.FirstConnectedInterface,
+                identityRead);
         if (initialWlan is null)
         {
             return new BrowserObservationResult(
@@ -62,21 +68,29 @@ public sealed class BrowserObservationRunner
         }
 
         string? preferredInterfaceId = initialWlan.InterfaceId;
-        string? preferredInterfaceDescription = initialWlan.InterfaceDescription;
-        InterfaceCounterReadResult initialCounterRead = WindowsInterfaceCounterReader.ReadCurrent(
-            preferredInterfaceId,
-            preferredInterfaceDescription);
+        string? preferredInterfaceDescription =
+            initialWlan.InterfaceDescription;
+        InterfaceCounterReadResult initialCounterRead =
+            WindowsInterfaceCounterReader.ReadCurrent(
+                preferredInterfaceId,
+                preferredInterfaceDescription);
 
         if (!initialCounterRead.IsSuccess)
         {
+            string identityContext = identityRead.IsSuccess
+                ? string.Empty
+                : $" WLAN 인터페이스 ID 조회도 제한됐습니다: {identityRead.Message}";
             return new BrowserObservationResult(
                 BrowserObservationStatus.InterfaceUnavailable,
                 null,
                 initialWlan,
-                initialCounterRead.Message);
+                initialCounterRead.Message
+                + identityContext
+                + " 다른 활성 Wi-Fi 인터페이스를 임의로 선택하지 않았습니다.");
         }
 
-        InterfaceCounterSnapshot previousCounter = initialCounterRead.Snapshot!;
+        InterfaceCounterSnapshot previousCounter =
+            initialCounterRead.Snapshot!;
         WlanSnapshot? previousWlan = initialWlan;
         DateTimeOffset startedAt = previousCounter.Timestamp;
         List<BrowserObservationSample> samples = [];
@@ -89,7 +103,8 @@ public sealed class BrowserObservationRunner
         int activeSampleCount = CalculateSampleCount(
             options.ObservationSeconds,
             options.SampleIntervalMilliseconds);
-        int totalSampleCount = checked(baselineSampleCount + activeSampleCount);
+        int totalSampleCount = checked(
+            baselineSampleCount + activeSampleCount);
 
         try
         {
@@ -100,12 +115,34 @@ public sealed class BrowserObservationRunner
                     options.SampleIntervalMilliseconds,
                     cancellationToken).ConfigureAwait(false);
 
-                WlanReadResult currentWlanRead = NativeWlanReader.ReadCurrent();
-                WlanSnapshot? currentWlan = currentWlanRead.FirstConnectedInterface;
+                WlanReadResult currentWlanRead =
+                    NativeWlanReader.ReadCurrent();
+                WlanSnapshot? currentWlan =
+                    WlanInterfaceIdentityReader.AttachIdentity(
+                        currentWlanRead.FirstConnectedInterface,
+                        identityRead);
+
+                if (currentWlan is not null
+                    && string.IsNullOrWhiteSpace(currentWlan.InterfaceId))
+                {
+                    WlanInterfaceIdentityReadResult refreshedIdentity =
+                        WlanInterfaceIdentityReader.ReadCurrent();
+                    if (refreshedIdentity.IsSuccess)
+                    {
+                        identityRead = refreshedIdentity;
+                        currentWlan =
+                            WlanInterfaceIdentityReader.AttachIdentity(
+                                currentWlan,
+                                identityRead);
+                    }
+                }
+
                 if (currentWlan is not null)
                 {
-                    preferredInterfaceId = currentWlan.InterfaceId ?? preferredInterfaceId;
-                    preferredInterfaceDescription = currentWlan.InterfaceDescription
+                    preferredInterfaceId = currentWlan.InterfaceId
+                        ?? preferredInterfaceId;
+                    preferredInterfaceDescription =
+                        currentWlan.InterfaceDescription
                         ?? preferredInterfaceDescription;
                 }
 
@@ -122,7 +159,8 @@ public sealed class BrowserObservationRunner
                             BrowserObservationStatus.InterfaceUnavailable,
                             null,
                             initialWlan,
-                            currentCounterRead.Message);
+                            currentCounterRead.Message
+                            + " 다른 Wi-Fi NIC로 자동 전환하지 않았습니다.");
                     }
 
                     BrowserObservationSummary partialSummary =
@@ -140,41 +178,48 @@ public sealed class BrowserObservationRunner
                         BrowserObservationStatus.PartialSuccess,
                         partialSummary,
                         initialWlan,
-                        $"일부 샘플을 수집한 뒤 인터페이스 카운터를 읽지 못했습니다. {currentCounterRead.Message}");
+                        "일부 샘플을 수집한 뒤 대응된 Wi-Fi 카운터를 계속 읽지 못했습니다. "
+                        + currentCounterRead.Message
+                        + " 다른 Wi-Fi NIC로 자동 전환하지 않았습니다.");
                 }
 
-                InterfaceCounterSnapshot currentCounter = currentCounterRead.Snapshot!;
+                InterfaceCounterSnapshot currentCounter =
+                    currentCounterRead.Snapshot!;
                 bool isBaseline = index < baselineSampleCount;
-                BrowserObservationSample sample = BrowserObservationCalculator.CreateSample(
-                    previousCounter,
-                    currentCounter,
-                    previousWlan,
-                    currentWlan,
-                    isBaseline,
-                    baselineReceiveMbps,
-                    previousAdjustedReceiveMbps);
+                BrowserObservationSample sample =
+                    BrowserObservationCalculator.CreateSample(
+                        previousCounter,
+                        currentCounter,
+                        previousWlan,
+                        currentWlan,
+                        isBaseline,
+                        baselineReceiveMbps,
+                        previousAdjustedReceiveMbps);
                 samples.Add(sample);
 
                 if (isBaseline)
                 {
                     baselineReceiveMbps =
-                        BrowserObservationCalculator.CalculateBaselineReceiveMbps(samples);
+                        BrowserObservationCalculator
+                            .CalculateBaselineReceiveMbps(samples);
                 }
                 else if (sample.AdjustedReceiveMbps.HasValue)
                 {
-                    previousAdjustedReceiveMbps = sample.AdjustedReceiveMbps.Value;
+                    previousAdjustedReceiveMbps =
+                        sample.AdjustedReceiveMbps.Value;
                 }
 
                 TimeSpan elapsed = currentCounter.Timestamp - startedAt;
                 int remainingSamples = totalSampleCount - index - 1;
                 TimeSpan remaining = TimeSpan.FromMilliseconds(
-                    remainingSamples * (long)options.SampleIntervalMilliseconds);
+                    remainingSamples
+                    * (long)options.SampleIntervalMilliseconds);
                 BrowserObservationPhase phase = isBaseline
                     ? BrowserObservationPhase.Baseline
                     : BrowserObservationPhase.Observing;
                 string message = isBaseline
-                    ? $"백그라운드 트래픽 기준 수집 중 {index + 1}/{baselineSampleCount}"
-                    : $"브라우저 다운로드 관찰 중 {index - baselineSampleCount + 1}/{activeSampleCount}";
+                    ? $"고정된 Wi-Fi NIC의 백그라운드 트래픽 기준 수집 중 {index + 1}/{baselineSampleCount}"
+                    : $"고정된 Wi-Fi NIC의 브라우저 다운로드 관찰 중 {index - baselineSampleCount + 1}/{activeSampleCount}";
 
                 progress?.Report(new BrowserObservationProgress(
                     phase,
@@ -189,12 +234,13 @@ public sealed class BrowserObservationRunner
         }
         catch (OperationCanceledException)
         {
-            BrowserObservationSummary? canceledSummary = samples.Count == 0
-                ? null
-                : BrowserObservationCalculator.Summarize(
-                    startedAt,
-                    DateTimeOffset.UtcNow,
-                    samples);
+            BrowserObservationSummary? canceledSummary =
+                samples.Count == 0
+                    ? null
+                    : BrowserObservationCalculator.Summarize(
+                        startedAt,
+                        DateTimeOffset.UtcNow,
+                        samples);
             progress?.Report(new BrowserObservationProgress(
                 BrowserObservationPhase.Canceled,
                 DateTimeOffset.UtcNow - startedAt,
@@ -209,12 +255,13 @@ public sealed class BrowserObservationRunner
         }
         catch (Exception exception)
         {
-            BrowserObservationSummary? failedSummary = samples.Count == 0
-                ? null
-                : BrowserObservationCalculator.Summarize(
-                    startedAt,
-                    DateTimeOffset.UtcNow,
-                    samples);
+            BrowserObservationSummary? failedSummary =
+                samples.Count == 0
+                    ? null
+                    : BrowserObservationCalculator.Summarize(
+                        startedAt,
+                        DateTimeOffset.UtcNow,
+                        samples);
             progress?.Report(new BrowserObservationProgress(
                 BrowserObservationPhase.Failed,
                 DateTimeOffset.UtcNow - startedAt,
@@ -231,16 +278,17 @@ public sealed class BrowserObservationRunner
         }
 
         DateTimeOffset completedAt = DateTimeOffset.UtcNow;
-        BrowserObservationSummary summary = BrowserObservationCalculator.Summarize(
-            startedAt,
-            completedAt,
-            samples);
+        BrowserObservationSummary summary =
+            BrowserObservationCalculator.Summarize(
+                startedAt,
+                completedAt,
+                samples);
         progress?.Report(new BrowserObservationProgress(
             BrowserObservationPhase.Completed,
             completedAt - startedAt,
             TimeSpan.Zero,
             samples.Count == 0 ? null : samples[^1],
-            "브라우저 다운로드 관찰을 완료했습니다."));
+            "고정된 Wi-Fi 인터페이스의 브라우저 다운로드 관찰을 완료했습니다."));
 
         BrowserObservationStatus status = summary.ActiveSampleCount > 0
             ? BrowserObservationStatus.Success
@@ -258,6 +306,7 @@ public sealed class BrowserObservationRunner
     {
         long durationMilliseconds = checked(seconds * 1000L);
         return checked((int)Math.Ceiling(
-            durationMilliseconds / (double)sampleIntervalMilliseconds));
+            durationMilliseconds
+            / (double)sampleIntervalMilliseconds));
     }
 }
