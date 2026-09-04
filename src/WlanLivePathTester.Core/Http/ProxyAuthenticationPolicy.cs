@@ -71,4 +71,19 @@ internal static class ProxyAuthenticationPolicy
             0,
             "프록시가 Negotiate 또는 NTLM을 제공하지 않아 자격 증명을 전송하지 않았습니다.");
     }
+
+    internal static bool CanAttempt(int completedAttempts, int maximumAttempts)
+    {
+        if (completedAttempts < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(completedAttempts));
+        }
+
+        if (maximumAttempts < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumAttempts));
+        }
+
+        return completedAttempts < maximumAttempts;
+    }
 }
