@@ -54,7 +54,8 @@ public sealed record WlanSnapshot(
     string? Authentication = null,
     string? Cipher = null,
     uint? NativeErrorCode = null,
-    string? ReadError = null);
+    string? ReadError = null,
+    string? InterfaceId = null);
 
 public sealed record DownloadMeasurement(
     string TargetName,

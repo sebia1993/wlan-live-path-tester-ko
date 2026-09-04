@@ -16,6 +16,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.ProxyAut
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.MeasurementSmoke", "tests\WlanLivePathTester.MeasurementSmoke\WlanLivePathTester.MeasurementSmoke.csproj", "{F0E935E5-7936-4FC5-9BE5-F5B8E2D35922}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WlanLivePathTester.ObservationSmoke", "tests\WlanLivePathTester.ObservationSmoke\WlanLivePathTester.ObservationSmoke.csproj", "{A8C5DB14-2DF4-4E7A-9D12-35C2E7A839B1}"
+EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution
         Debug|Any CPU = Debug|Any CPU
@@ -50,6 +52,10 @@ Global
         {F0E935E5-7936-4FC5-9BE5-F5B8E2D35922}.Debug|Any CPU.Build.0 = Debug|Any CPU
         {F0E935E5-7936-4FC5-9BE5-F5B8E2D35922}.Release|Any CPU.ActiveCfg = Release|Any CPU
         {F0E935E5-7936-4FC5-9BE5-F5B8E2D35922}.Release|Any CPU.Build.0 = Release|Any CPU
+        {A8C5DB14-2DF4-4E7A-9D12-35C2E7A839B1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {A8C5DB14-2DF4-4E7A-9D12-35C2E7A839B1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {A8C5DB14-2DF4-4E7A-9D12-35C2E7A839B1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {A8C5DB14-2DF4-4E7A-9D12-35C2E7A839B1}.Release|Any CPU.Build.0 = Release|Any CPU
     EndGlobalSection
     GlobalSection(SolutionProperties) = preSolution
         HideSolutionNode = FALSE
