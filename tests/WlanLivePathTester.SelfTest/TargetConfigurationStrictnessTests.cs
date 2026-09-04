@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using WlanLivePathTester.Core.Configuration;
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.Security;
 
 namespace WlanLivePathTester.SelfTest;
 
@@ -12,7 +13,8 @@ internal static class TargetConfigurationStrictnessTests
     {
         RejectsUnknownProperty();
         AppliesSafePathDefaults();
-        Console.WriteLine("PASS  승인 대상 JSON 엄격 검증과 경로 기본값");
+        EnforcesActiveApprovedCatalog();
+        Console.WriteLine("PASS  승인 대상 JSON 엄격 검증과 실행 경계");
     }
 
     private static void RejectsUnknownProperty()
@@ -92,6 +94,63 @@ internal static class TargetConfigurationStrictnessTests
         {
             throw new InvalidOperationException(
                 "외부 승인 대상은 기본적으로 PROXY만 요구해야 합니다.");
+        }
+    }
+
+    private static void EnforcesActiveApprovedCatalog()
+    {
+        MeasurementTargetDefinition approved = new(
+            Name: "승인 외부 대상",
+            Url: "https://example.invalid/approved.bin",
+            PathKind: NetworkPathKind.External,
+            RequireProxy: true,
+            RequireDirect: false,
+            MaxBytes: 10 * 1024 * 1024,
+            TimeoutSeconds: 30,
+            Streams: 1,
+            MaxRedirects: 3,
+            AllowedRedirectHosts: ["cdn.example.invalid"]);
+
+        ApprovedTargetRuntimeCatalog.Replace([approved]);
+        try
+        {
+            MeasurementTargetDefinition unapproved = approved with
+            {
+                Url = "https://other.example.invalid/file.bin"
+            };
+            IReadOnlyList<string> unapprovedErrors =
+                TargetValidator.Validate(unapproved);
+            if (!unapprovedErrors.Any(error => error.Contains(
+                    "승인 대상 목록",
+                    StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException(
+                    "활성 승인 목록에 없는 URL을 차단해야 합니다.");
+            }
+
+            MeasurementTargetDefinition modifiedLimit = approved with
+            {
+                MaxBytes = approved.MaxBytes * 2
+            };
+            IReadOnlyList<string> limitErrors =
+                TargetValidator.Validate(modifiedLimit);
+            if (!limitErrors.Any(error => error.Contains(
+                    "승인 대상 설정과 일치하지 않습니다",
+                    StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException(
+                    "승인된 URL의 실행 제한값 변경을 차단해야 합니다.");
+            }
+
+            if (TargetValidator.Validate(approved).Count != 0)
+            {
+                throw new InvalidOperationException(
+                    "승인된 원본 대상은 검증을 통과해야 합니다.");
+            }
+        }
+        finally
+        {
+            ApprovedTargetRuntimeCatalog.Clear();
         }
     }
 }
