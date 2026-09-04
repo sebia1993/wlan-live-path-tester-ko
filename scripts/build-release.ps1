@@ -168,24 +168,26 @@ try {
     Copy-RequiredFile `
         -Source (Join-Path $root 'THIRD_PARTY_NOTICES.md') `
         -Destination (Join-Path $portableStage 'THIRD_PARTY_NOTICES.md')
-    Copy-RequiredFile `
-        -Source (Join-Path $root 'docs\NETWORK_BOUNDARY.md') `
-        -Destination (Join-Path $portableStage 'docs\NETWORK_BOUNDARY.md')
-    Copy-RequiredFile `
-        -Source (Join-Path $root 'docs\BROWSER_OBSERVATION.md') `
-        -Destination (Join-Path $portableStage 'docs\BROWSER_OBSERVATION.md')
-    Copy-RequiredFile `
-        -Source (Join-Path $root 'docs\REPORTING.md') `
-        -Destination (Join-Path $portableStage 'docs\REPORTING.md')
-    Copy-RequiredFile `
-        -Source (Join-Path $root 'docs\RELEASE_VALIDATION.md') `
-        -Destination (Join-Path $portableStage 'docs\RELEASE_VALIDATION.md')
-    Copy-RequiredFile `
-        -Source (Join-Path $root 'docs\TARGET_CONFIGURATION.md') `
-        -Destination (Join-Path $portableStage 'docs\TARGET_CONFIGURATION.md')
-    Copy-RequiredFile `
-        -Source (Join-Path $root 'docs\REPEATED_MEASUREMENT.md') `
-        -Destination (Join-Path $portableStage 'docs\REPEATED_MEASUREMENT.md')
+
+    $releaseDocuments = @(
+        'docs\NETWORK_BOUNDARY.md',
+        'docs\DOWNLOAD_MEASUREMENT.md',
+        'docs\BROWSER_OBSERVATION.md',
+        'docs\NETWORK_INTERFACE_CONTEXT.md',
+        'docs\WLAN_INTERFACE_CORRELATION.md',
+        'docs\NETWORK_ADAPTER_DIAGNOSTICS.md',
+        'docs\PROXY_ROUTE_RESOLUTION.md',
+        'docs\REPORTING.md',
+        'docs\TARGET_CONFIGURATION.md',
+        'docs\ADMINISTRATOR_POLICY_VALIDATION.md',
+        'docs\REPEATED_MEASUREMENT.md',
+        'docs\RELEASE_VALIDATION.md'
+    )
+    foreach ($relativePath in $releaseDocuments) {
+        Copy-RequiredFile `
+            -Source (Join-Path $root $relativePath) `
+            -Destination (Join-Path $portableStage $relativePath)
+    }
 
     $exampleConfig = Join-Path $root 'config\targets.example.json'
     if (Test-Path -LiteralPath $exampleConfig -PathType Leaf) {
