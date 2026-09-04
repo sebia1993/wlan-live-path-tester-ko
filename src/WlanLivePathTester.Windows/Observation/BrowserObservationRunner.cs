@@ -28,6 +28,14 @@ public sealed class BrowserObservationRunner
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (!_runtime.RequiresWorkerThread)
+        {
+            return RunCoreAsync(
+                options,
+                progress,
+                cancellationToken);
+        }
+
         return Task.Run(
             () => RunCoreAsync(options, progress, cancellationToken),
             CancellationToken.None);
