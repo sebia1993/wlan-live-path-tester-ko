@@ -77,6 +77,11 @@ public static class WlanInterfaceIdentityReader
                 WlanInterfaceInfoNative item =
                     Marshal.PtrToStructure<WlanInterfaceInfoNative>(
                         itemPointer);
+                if (item.InterfaceGuid == Guid.Empty)
+                {
+                    continue;
+                }
+
                 identities.Add(new WlanInterfaceIdentity(
                     InterfaceId: item.InterfaceGuid.ToString("D"),
                     Description: NormalizeDescription(
@@ -88,7 +93,7 @@ public static class WlanInterfaceIdentityReader
             return new WlanInterfaceIdentityReadResult(
                 IsSuccess: true,
                 Interfaces: identities,
-                Message: $"WLAN 인터페이스 ID {identities.Count}개를 로컬 WLAN API에서 확인했습니다.");
+                Message: $"유효한 WLAN 인터페이스 ID {identities.Count}개를 로컬 WLAN API에서 확인했습니다.");
         }
         catch (Exception exception) when (
             exception is DllNotFoundException
@@ -132,16 +137,27 @@ public static class WlanInterfaceIdentityReader
 
         string description = NormalizeDescription(
             snapshot.InterfaceDescription);
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            return snapshot;
+        }
+
         WlanInterfaceIdentity[] matches = identities.Interfaces
             .Where(identity => identity.IsConnected)
+            .Where(identity => !string.IsNullOrWhiteSpace(
+                identity.Description))
             .Where(identity => identity.Description.Equals(
                 description,
                 StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         return matches.Length == 1
-            ? snapshot with { InterfaceId = matches[0].InterfaceId }
-            : snapshot;
+            && Guid.TryParse(matches[0].InterfaceId, out Guid parsed)
+                ? snapshot with
+                {
+                    InterfaceId = parsed.ToString("D")
+                }
+                : snapshot;
     }
 
     private static WlanInterfaceIdentityReadResult Failure(
