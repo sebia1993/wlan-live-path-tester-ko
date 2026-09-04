@@ -52,19 +52,38 @@ public static class ApprovedTargetRuntimeCatalog
         }
     }
 
-    public static MeasurementTargetDefinition Apply(
-        MeasurementTargetDefinition requested)
+    public static bool TryResolve(
+        MeasurementTargetDefinition requested,
+        out MeasurementTargetDefinition effective)
     {
         ArgumentNullException.ThrowIfNull(requested);
 
         lock (Sync)
         {
-            return _targets.TryGetValue(
-                CreateKey(requested.PathKind, requested.Url),
-                out MeasurementTargetDefinition? approved)
-                ? approved
-                : requested;
+            if (_targets.Count == 0)
+            {
+                effective = requested;
+                return true;
+            }
+
+            if (_targets.TryGetValue(
+                    CreateKey(requested.PathKind, requested.Url),
+                    out MeasurementTargetDefinition? approved))
+            {
+                effective = approved;
+                return true;
+            }
+
+            effective = requested;
+            return false;
         }
+    }
+
+    public static MeasurementTargetDefinition Apply(
+        MeasurementTargetDefinition requested)
+    {
+        _ = TryResolve(requested, out MeasurementTargetDefinition effective);
+        return effective;
     }
 
     public static IReadOnlyList<MeasurementTargetDefinition> Snapshot()
