@@ -25,9 +25,9 @@ public sealed record InterfaceCounterSelectionDecision(
     string Message)
 {
     public bool IsSelected =>
-        Status is InterfaceCounterSelectionStatus.SelectedByInterfaceId
+        (Status is InterfaceCounterSelectionStatus.SelectedByInterfaceId
             or InterfaceCounterSelectionStatus.SelectedByDescription
-            or InterfaceCounterSelectionStatus.SelectedSingleActiveWireless
+            or InterfaceCounterSelectionStatus.SelectedSingleActiveWireless)
         && SelectedCandidateIndex.HasValue;
 }
 
