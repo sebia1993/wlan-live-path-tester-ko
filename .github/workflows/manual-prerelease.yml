@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "New prerelease tag, for example v0.1.0-alpha.1"
+        description: "New prerelease tag, for example v0.1.0-alpha.2"
         required: true
-        default: "v0.1.0-alpha.1"
+        default: "v0.1.0-alpha.2"
         type: string
 
 permissions:
@@ -44,7 +44,7 @@ jobs:
           $tag = $env:REQUESTED_TAG.Trim()
           $pattern = '^v(?<version>(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)-[0-9A-Za-z.-]+)$'
           if ($tag -notmatch $pattern) {
-              throw "Manual bootstrap only accepts a new prerelease tag such as v0.1.0-alpha.1: $tag"
+              throw "Manual bootstrap only accepts a new prerelease tag such as v0.1.0-alpha.2: $tag"
           }
 
           $version = $Matches['version']
@@ -164,12 +164,18 @@ jobs:
           - Windows 고정 프록시·PAC·WPAD URL별 경로 판정
           - HTTP 407 Negotiate/NTLM 통합 인증
           - 내부 DIRECT 및 외부 프록시 경유 HEAD/GET 다운로드 측정
+          - 엄격한 로컬 승인 대상 및 리다이렉트 호스트 정책
           - 프로그램 자체 외부 요청이 없는 브라우저 다운로드 관찰
-          - 마스킹된 로컬 JSON·CSV·단일 HTML 보고서와 SHA-256
+          - 예열 제외 반복 측정 중앙값·편차·캐시 기반 신뢰도
+          - 일반 및 반복 측정용 로컬 JSON·CSV·단일 HTML 보고서와 SHA-256
 
           ### 자동 검증
 
           전체 Release 빌드, 모든 합성 smoke test, 저장소·네트워크 경계 감사, Portable ZIP·single-file 패키지 구조, 금지 파일, 경로 순회, PE 버전과 SHA-256 재계산을 확인했습니다.
+
+          ### 취소 동작
+
+          현재 전송 계층은 동기 WinHTTP입니다. 요청 사이·반복 사이·대상 사이 취소는 반영되지만, 이미 블로킹된 현재 WinHTTP 호출은 제한 시간이 끝난 뒤 취소 상태가 반영될 수 있습니다.
 
           ### 실제 환경 검증
 
