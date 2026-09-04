@@ -94,7 +94,7 @@ public partial class MainWindow
             Child = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
-                Text = "이 탭은 자동 선택의 근거와 모호성을 보여주는 진단 계층입니다. 동일 우선순위의 활성 물리 Wi-Fi가 여러 개면 임의로 첫 번째 어댑터를 선택하지 않고 ‘모호함’으로 표시합니다. VPN이 활성화되어 있으면 외부 경로가 VPN 정책의 영향을 받을 수 있습니다."
+                Text = "동일 우선순위의 활성 물리 Wi-Fi가 여러 개면 임의로 첫 번째 어댑터를 선택하지 않습니다. Native WLAN GUID를 직접 읽지 못하면 연결 identity의 설명 완전 일치로 한 번 보완하며, 중복 후보는 선택하지 않습니다."
             }
         });
         content.Children.Add(_refreshNetworkAdapterDiagnosticsButton);
@@ -106,6 +106,29 @@ public partial class MainWindow
             "경고",
             _networkAdapterWarningText,
             marginTop: 12));
+
+        StackPanel inventoryPanel = new();
+        inventoryPanel.Children.Add(new TextBlock
+        {
+            FontSize = 17,
+            FontWeight = FontWeights.SemiBold,
+            Text = "로컬 어댑터 인벤토리"
+        });
+        inventoryPanel.Children.Add(new TextBlock
+        {
+            Margin = new Thickness(0, 5, 0, 10),
+            Foreground = new SolidColorBrush(Color.FromRgb(86, 101, 115)),
+            TextWrapping = TextWrapping.Wrap,
+            Text = "IP·MAC·게이트웨이 주소 원문은 표시하지 않습니다. ID는 SHA-256 앞 10자리 지문으로만 표시합니다."
+        });
+        inventoryPanel.Children.Add(new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            MaxHeight = 480,
+            Content = _networkAdapterInventoryText
+        });
+
         content.Children.Add(new Border
         {
             Margin = new Thickness(0, 12, 0, 0),
@@ -114,32 +137,7 @@ public partial class MainWindow
             Background = Brushes.White,
             BorderBrush = new SolidColorBrush(Color.FromRgb(216, 221, 227)),
             BorderThickness = new Thickness(1),
-            Child = new StackPanel
-            {
-                Children =
-                {
-                    new TextBlock
-                    {
-                        FontSize = 17,
-                        FontWeight = FontWeights.SemiBold,
-                        Text = "로컬 어댑터 인벤토리"
-                    },
-                    new TextBlock
-                    {
-                        Margin = new Thickness(0, 5, 0, 10),
-                        Foreground = new SolidColorBrush(Color.FromRgb(86, 101, 115)),
-                        TextWrapping = TextWrapping.Wrap,
-                        Text = "IP·MAC·게이트웨이 주소 원문은 표시하지 않습니다. ID는 SHA-256 앞 10자리 지문으로만 표시합니다."
-                    },
-                    new ScrollViewer
-                    {
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        MaxHeight = 480,
-                        Content = _networkAdapterInventoryText
-                    }
-                }
-            }
+            Child = inventoryPanel
         });
 
         return new TabItem
@@ -209,7 +207,12 @@ public partial class MainWindow
         }
 
         WlanReadResult wlanRead = NativeWlanReader.ReadCurrent();
-        WlanSnapshot? connectedWlan = wlanRead.FirstConnectedInterface;
+        WlanInterfaceIdentityReadResult identityRead =
+            WlanInterfaceIdentityReader.ReadCurrent();
+        WlanSnapshot? connectedWlan =
+            WlanInterfaceIdentityReader.AttachIdentity(
+                wlanRead.FirstConnectedInterface,
+                identityRead);
         NetworkAdapterInventoryReadResult inventoryRead =
             NetworkAdapterInventoryReader.Read(
                 connectedWlan?.InterfaceId);
@@ -219,7 +222,10 @@ public partial class MainWindow
         _recommendedWirelessAdapterId =
             selection.Selected?.Candidate.Id;
         SetNetworkAdapterSelectionText(
-            FormatAdapterSelection(selection, connectedWlan),
+            FormatAdapterSelection(
+                selection,
+                connectedWlan,
+                identityRead),
             selection.Status == WirelessAdapterSelectionStatus.Selected
                 ? Brushes.DarkGreen
                 : selection.Status == WirelessAdapterSelectionStatus.Ambiguous
@@ -231,6 +237,18 @@ public partial class MainWindow
             .. inventoryRead.Warnings,
             .. selection.Warnings
         ];
+        if (!identityRead.IsSuccess)
+        {
+            warnings.Add(
+                "WLAN identity 목록을 읽지 못해 Native WLAN GUID 우선순위를 적용하지 못했습니다. 설명·상태 근거만 사용했습니다.");
+        }
+        else if (connectedWlan is not null
+                 && string.IsNullOrWhiteSpace(connectedWlan.InterfaceId))
+        {
+            warnings.Add(
+                "연결된 Native WLAN과 정확히 하나의 identity를 대응시키지 못했습니다. 다중 Wi-Fi 환경에서는 선택 결과를 직접 확인하십시오.");
+        }
+
         _networkAdapterWarningText.Text = warnings.Count == 0
             ? "추가 경고 없음"
             : string.Join(
@@ -246,7 +264,8 @@ public partial class MainWindow
 
     private static string FormatAdapterSelection(
         WirelessAdapterSelectionResult selection,
-        WlanSnapshot? connectedWlan)
+        WlanSnapshot? connectedWlan,
+        WlanInterfaceIdentityReadResult identityRead)
     {
         StringBuilder builder = new();
         builder.AppendLine($"상태: {FormatSelectionStatus(selection.Status)}");
@@ -269,6 +288,7 @@ public partial class MainWindow
             }
         }
 
+        builder.AppendLine($"WLAN identity 조회: {(identityRead.IsSuccess ? "성공" : "제한")} · 항목 {identityRead.Interfaces.Count}개");
         if (connectedWlan is not null)
         {
             builder.AppendLine($"Native WLAN 연결 상태: {(connectedWlan.IsConnected ? "연결됨" : "연결 안 됨")}");
