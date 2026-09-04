@@ -52,8 +52,9 @@ try {
 
     $observationGuideNames = @($entriesByNormalizedName.Keys |
         Where-Object {
-            $_ -like 'docs/*OBSERVATION*'
-            -or $_ -eq 'docs/WLAN_IDENTITY_CONTINUITY.md'
+            $isObservationGuide = $_ -like 'docs/*OBSERVATION*'
+            $isIdentityGuide = $_ -eq 'docs/WLAN_IDENTITY_CONTINUITY.md'
+            $isObservationGuide -or $isIdentityGuide
         })
     $missingNormalizedSeparators = @($observationGuideNames |
         Where-Object { $_.Contains('\') })
