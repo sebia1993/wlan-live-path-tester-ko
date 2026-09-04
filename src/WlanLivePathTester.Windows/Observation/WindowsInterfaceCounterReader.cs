@@ -1,5 +1,6 @@
 using System.Net.NetworkInformation;
 using System.Runtime.Versioning;
+using WlanLivePathTester.Core.NetworkEnvironment;
 using WlanLivePathTester.Core.Observation;
 
 namespace WlanLivePathTester.Windows.Observation;
@@ -25,16 +26,26 @@ public static class WindowsInterfaceCounterReader
                 NetworkInterface.GetAllNetworkInterfaces();
             InterfaceCounterCandidate[] candidates = interfaces
                 .Select((item, index) =>
-                    new InterfaceCounterCandidate(
+                {
+                    NetworkAdapterClassification classification =
+                        NetworkAdapterClassifier.Classify(
+                            item.NetworkInterfaceType.ToString(),
+                            item.Name,
+                            item.Description);
+                    bool isEligibleWireless =
+                        item.NetworkInterfaceType
+                            == NetworkInterfaceType.Wireless80211
+                        && !classification.IsVirtual
+                        && !classification.IsVpn;
+                    return new InterfaceCounterCandidate(
                         CandidateIndex: index,
                         InterfaceId: item.Id,
                         Description: item.Description,
-                        IsWireless:
-                            item.NetworkInterfaceType
-                                == NetworkInterfaceType.Wireless80211,
+                        IsWireless: isEligibleWireless,
                         IsOperational:
                             item.OperationalStatus
-                                == OperationalStatus.Up))
+                                == OperationalStatus.Up);
+                })
                 .ToArray();
             InterfaceCounterSelectionDecision selection =
                 InterfaceCounterSelectionPolicy.Select(
@@ -61,13 +72,20 @@ public static class WindowsInterfaceCounterReader
             }
 
             NetworkInterface selected = interfaces[selectedIndex];
+            NetworkAdapterClassification selectedClassification =
+                NetworkAdapterClassifier.Classify(
+                    selected.NetworkInterfaceType.ToString(),
+                    selected.Name,
+                    selected.Description);
             if (selected.NetworkInterfaceType
-                != NetworkInterfaceType.Wireless80211)
+                    != NetworkInterfaceType.Wireless80211
+                || selectedClassification.IsVirtual
+                || selectedClassification.IsVpn)
             {
                 return new InterfaceCounterReadResult(
                     InterfaceCounterReadStatus.Failed,
                     null,
-                    "선택 정책이 Wi-Fi가 아닌 인터페이스를 반환해 카운터를 읽지 않았습니다.");
+                    "선택 정책이 물리 Wi-Fi 후보가 아닌 인터페이스를 반환해 카운터를 읽지 않았습니다.");
             }
 
             IPInterfaceStatistics statistics = selected.GetIPStatistics();
