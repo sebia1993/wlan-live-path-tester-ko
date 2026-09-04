@@ -36,8 +36,8 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\WLAN_IDENTITY_CONTINUITY.md"
           Link="docs\WLAN_IDENTITY_CONTINUITY.md"
           CopyToPublishDirectory="PreserveNewest" />
-    <None Include="$(MSBuildThisFileDirectory)..\..\docs\RELEASE_NOTES_v0.1.0-alpha.10.md"
-          Link="docs\RELEASE_NOTES_v0.1.0-alpha.10.md"
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\RELEASE_NOTES_0.1.0-alpha.10.md"
+          Link="docs\RELEASE_NOTES_0.1.0-alpha.10.md"
           CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
@@ -67,7 +67,7 @@
            Text="Published output is missing OBSERVATION_COMBINED_DISRUPTIONS.md." />
     <Error Condition="!Exists('$(PublishDir)docs\WLAN_IDENTITY_CONTINUITY.md')"
            Text="Published output is missing WLAN_IDENTITY_CONTINUITY.md." />
-    <Error Condition="!Exists('$(PublishDir)docs\RELEASE_NOTES_v0.1.0-alpha.10.md')"
-           Text="Published output is missing RELEASE_NOTES_v0.1.0-alpha.10.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\RELEASE_NOTES_0.1.0-alpha.10.md')"
+           Text="Published output is missing RELEASE_NOTES_0.1.0-alpha.10.md." />
   </Target>
 </Project>

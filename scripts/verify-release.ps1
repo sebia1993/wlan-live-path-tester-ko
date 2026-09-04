@@ -36,6 +36,14 @@ function Invoke-CheckedCommand {
 
 Push-Location $root
 try {
+    Invoke-CheckedCommand `
+        -Description 'Validate prerelease workflow contract' `
+        -Command {
+            powershell -NoProfile -ExecutionPolicy Bypass -File `
+                (Join-Path $root `
+                    'scripts\test-prerelease-workflow-contract.ps1')
+        }
+
     Invoke-CheckedCommand -Description 'Restore solution' -Command {
         dotnet restore $solution
     }
