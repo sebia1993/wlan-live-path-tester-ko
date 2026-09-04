@@ -19,6 +19,7 @@ public sealed record RepeatedMeasurementPlan(
     public const int MaximumRepeatCount = 5;
     public const int MinimumDelayMilliseconds = 0;
     public const int MaximumDelayMilliseconds = 10000;
+    public const long MaximumPlannedBytesPerTarget = 2L * 1024 * 1024 * 1024;
 
     public static RepeatedMeasurementPlan Recommended { get; } = new(
         RepeatCount: 3,
@@ -41,6 +42,49 @@ public sealed record RepeatedMeasurementPlan(
         }
 
         return errors;
+    }
+
+    public IReadOnlyList<string> ValidateForTarget(
+        MeasurementTargetDefinition target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+
+        List<string> errors = [.. Validate()];
+        if (RepeatCount is < MinimumRepeatCount or > MaximumRepeatCount)
+        {
+            return errors;
+        }
+
+        long plannedBytes;
+        try
+        {
+            plannedBytes = checked(target.MaxBytes * TotalRunCount);
+        }
+        catch (OverflowException)
+        {
+            errors.Add("반복 측정의 최대 예상 수신량을 계산할 수 없습니다.");
+            return errors;
+        }
+
+        if (plannedBytes > MaximumPlannedBytesPerTarget)
+        {
+            errors.Add($"대상 하나의 반복 측정 최대 예상 수신량은 {MaximumPlannedBytesPerTarget / 1024 / 1024}MiB를 넘을 수 없습니다.");
+        }
+
+        return errors;
+    }
+
+    public long GetPlannedMaximumBytes(
+        MeasurementTargetDefinition target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        IReadOnlyList<string> errors = ValidateForTarget(target);
+        if (errors.Count > 0)
+        {
+            throw new ArgumentException(string.Join(" ", errors), nameof(target));
+        }
+
+        return checked(target.MaxBytes * TotalRunCount);
     }
 }
 
