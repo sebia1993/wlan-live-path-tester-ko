@@ -105,6 +105,38 @@ Native WLAN Rx/Tx PHY 링크 속도
 5. 내부·외부 다운로드 또는 반복 측정을 실행합니다.
 6. 브라우저 관찰 결과와 실제 요청 경로가 같은 물리 Wi-Fi를 사용했는지 검토합니다.
 
+## 인터페이스 환경 보고서
+
+`인터페이스 보고서` 탭에서 현재 환경을 다시 수집해 다음 파일을 생성할 수 있습니다.
+
+```text
+WlanNetworkEnvironment_yyyyMMdd_HHmmss.json
+WlanNetworkEnvironment_yyyyMMdd_HHmmss.csv
+WlanNetworkEnvironment_yyyyMMdd_HHmmss.html
+WlanNetworkEnvironment_yyyyMMdd_HHmmss_SHA256SUMS.txt
+```
+
+보고서는 어댑터를 `adapter.1`, `adapter.2`와 같은 익명 순번으로 기록합니다. 다음 구조화 값은 포함합니다.
+
+- 인터페이스 범주와 Windows 네이티브 유형
+- Up·Down 등 운영 상태
+- 링크 속도
+- 기본 게이트웨이 유무와 개수
+- IPv4·IPv6 주소 보유 여부와 주소 개수
+- VPN·가상 어댑터 분류
+- 속성 조회가 일부 제한됐는지 여부
+- 다중 기본 경로·유선/무선 동시 활성·VPN·가상 NIC 판정
+
+다음 식별정보는 보고서 모델 자체에 넣지 않습니다.
+
+- 인터페이스 이름과 설명
+- 인터페이스 GUID
+- IP·게이트웨이·DNS·DHCP 주소
+- MAC 주소
+- SSID와 BSSID
+
+CSV는 수식 시작 문자를 비활성화하며, HTML은 외부 JavaScript·스타일시트·웹폰트·이미지·iframe 없이 생성합니다. JSON·CSV·HTML의 SHA-256을 별도 파일에 기록합니다.
+
 ## 판단 한계
 
 - 기본 게이트웨이가 한 개여도 더 구체적인 목적지 경로가 다른 인터페이스를 선택할 수 있습니다.
