@@ -7,70 +7,6 @@ using WlanLivePathTester.Core.Measurements;
 
 namespace WlanLivePathTester.Core.Reporting;
 
-public sealed record RepeatedMeasurementReportDocument(
-    string SchemaVersion,
-    DateTimeOffset GeneratedAt,
-    string ApplicationName,
-    string ApplicationVersion,
-    bool SensitiveValuesIncluded,
-    string DataHandlingStatement,
-    IReadOnlyList<RepeatedMeasurementReportEntry> Measurements,
-    IReadOnlyList<string> Limitations);
-
-public sealed record RepeatedMeasurementReportEntry(
-    string TargetName,
-    string PathKind,
-    DateTimeOffset StartedAt,
-    DateTimeOffset CompletedAt,
-    int RepeatCount,
-    bool IncludeWarmup,
-    int DelayMilliseconds,
-    int PlannedMeasurementCount,
-    int CompletedMeasurementCount,
-    int SuccessfulMeasurementCount,
-    int FailedMeasurementCount,
-    int NotCompletedMeasurementCount,
-    long TotalBytesReceived,
-    double? MedianMbps,
-    double? MinimumMbps,
-    double? MaximumMbps,
-    double? MeanMbps,
-    double? StandardDeviationMbps,
-    double? CoefficientOfVariation,
-    int? RepresentativeSequence,
-    bool CacheHitPossible,
-    string Confidence,
-    IReadOnlyList<string> ConfidenceReasons,
-    IReadOnlyList<RepeatedMeasurementReportRun> Runs);
-
-public sealed record RepeatedMeasurementReportRun(
-    int Sequence,
-    bool IsWarmup,
-    string Status,
-    DateTimeOffset StartedAt,
-    DateTimeOffset CompletedAt,
-    double DurationSeconds,
-    long BytesReceived,
-    double? AverageMbps,
-    double? PeakMbps,
-    double? TimeToFirstByteMilliseconds,
-    int? HttpStatusCode,
-    bool? ProxyWasUsed,
-    int StreamsRequested,
-    int StreamsCompleted,
-    int RedirectCount,
-    string CacheClassification,
-    string Confidence,
-    string? ErrorCode);
-
-public sealed record RepeatedMeasurementReportExportResult(
-    string OutputDirectory,
-    string JsonPath,
-    string CsvPath,
-    string HtmlPath,
-    string Sha256Path,
-    IReadOnlyDictionary<string, string> Sha256);
-
 public static class RepeatedMeasurementReportWriter
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -94,9 +30,7 @@ public static class RepeatedMeasurementReportWriter
             ApplicationVersion: applicationVersion,
             SensitiveValuesIncluded: false,
             DataHandlingStatement: "반복 측정 요약은 현재 PC에서 생성되며 자동 업로드, 텔레메트리 또는 온라인 분석을 수행하지 않습니다.",
-            Measurements: results
-                .Select(Map)
-                .ToArray(),
+            Measurements: results.Select(Map).ToArray(),
             Limitations:
             [
                 "외부 결과는 회사 프록시와 외부 대상 서버·CDN을 포함한 체감 다운로드 성능입니다.",
@@ -173,102 +107,82 @@ public static class RepeatedMeasurementReportWriter
         ArgumentNullException.ThrowIfNull(report);
 
         StringBuilder builder = new();
-        builder.AppendLine("targetIndex,rowType,sequence,isWarmup,targetName,pathKind,status,startedAt,completedAt,durationSeconds,bytesReceived,averageMbps,peakMbps,ttfbMilliseconds,httpStatusCode,proxyWasUsed,streamsRequested,streamsCompleted,redirectCount,repeatCount,includeWarmup,delayMilliseconds,plannedCount,completedCount,successCount,failedCount,notCompletedCount,totalBytesReceived,medianMbps,minimumMbps,maximumMbps,meanMbps,standardDeviationMbps,coefficientOfVariation,representativeSequence,cacheHitPossible,cacheClassification,confidence,confidenceReasons,errorCode");
+        builder.AppendLine("section,key,value");
+        AddCsv(builder, "metadata", "schemaVersion", report.SchemaVersion);
+        AddCsv(builder, "metadata", "generatedAt", Iso(report.GeneratedAt));
+        AddCsv(builder, "metadata", "applicationName", report.ApplicationName);
+        AddCsv(builder, "metadata", "applicationVersion", report.ApplicationVersion);
+        AddCsv(
+            builder,
+            "metadata",
+            "sensitiveValuesIncluded",
+            FormatInvariant(report.SensitiveValuesIncluded));
+        AddCsv(builder, "metadata", "dataHandling", report.DataHandlingStatement);
 
-        for (int targetIndex = 0;
-             targetIndex < report.Measurements.Count;
-             targetIndex++)
+        for (int index = 0; index < report.Measurements.Count; index++)
         {
-            RepeatedMeasurementReportEntry entry =
-                report.Measurements[targetIndex];
-            AppendCsvRow(
+            RepeatedMeasurementReportEntry entry = report.Measurements[index];
+            string section = $"repeatedMeasurement.{index + 1}";
+            AddCsv(builder, section, "targetName", entry.TargetName);
+            AddCsv(builder, section, "pathKind", entry.PathKind);
+            AddCsv(builder, section, "startedAt", Iso(entry.StartedAt));
+            AddCsv(builder, section, "completedAt", Iso(entry.CompletedAt));
+            AddCsv(builder, section, "repeatCount", FormatInvariant(entry.RepeatCount));
+            AddCsv(builder, section, "includeWarmup", FormatInvariant(entry.IncludeWarmup));
+            AddCsv(builder, section, "delayMilliseconds", FormatInvariant(entry.DelayMilliseconds));
+            AddCsv(builder, section, "plannedCount", FormatInvariant(entry.PlannedMeasurementCount));
+            AddCsv(builder, section, "completedCount", FormatInvariant(entry.CompletedMeasurementCount));
+            AddCsv(builder, section, "successCount", FormatInvariant(entry.SuccessfulMeasurementCount));
+            AddCsv(builder, section, "failedCount", FormatInvariant(entry.FailedMeasurementCount));
+            AddCsv(builder, section, "notCompletedCount", FormatInvariant(entry.NotCompletedMeasurementCount));
+            AddCsv(builder, section, "totalBytesReceived", FormatInvariant(entry.TotalBytesReceived));
+            AddCsv(builder, section, "medianMbps", FormatInvariant(entry.MedianMbps));
+            AddCsv(builder, section, "minimumMbps", FormatInvariant(entry.MinimumMbps));
+            AddCsv(builder, section, "maximumMbps", FormatInvariant(entry.MaximumMbps));
+            AddCsv(builder, section, "meanMbps", FormatInvariant(entry.MeanMbps));
+            AddCsv(builder, section, "standardDeviationMbps", FormatInvariant(entry.StandardDeviationMbps));
+            AddCsv(builder, section, "coefficientOfVariation", FormatInvariant(entry.CoefficientOfVariation));
+            AddCsv(builder, section, "representativeSequence", FormatInvariant(entry.RepresentativeSequence));
+            AddCsv(builder, section, "cacheHitPossible", FormatInvariant(entry.CacheHitPossible));
+            AddCsv(builder, section, "confidence", entry.Confidence);
+            AddCsv(
                 builder,
-                targetIndex + 1,
-                "summary",
-                string.Empty,
-                string.Empty,
-                entry.TargetName,
-                entry.PathKind,
-                string.Empty,
-                Iso(entry.StartedAt),
-                Iso(entry.CompletedAt),
-                Number((entry.CompletedAt - entry.StartedAt).TotalSeconds),
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                Number(entry.RepeatCount),
-                Boolean(entry.IncludeWarmup),
-                Number(entry.DelayMilliseconds),
-                Number(entry.PlannedMeasurementCount),
-                Number(entry.CompletedMeasurementCount),
-                Number(entry.SuccessfulMeasurementCount),
-                Number(entry.FailedMeasurementCount),
-                Number(entry.NotCompletedMeasurementCount),
-                Number(entry.TotalBytesReceived),
-                Number(entry.MedianMbps),
-                Number(entry.MinimumMbps),
-                Number(entry.MaximumMbps),
-                Number(entry.MeanMbps),
-                Number(entry.StandardDeviationMbps),
-                Number(entry.CoefficientOfVariation),
-                Number(entry.RepresentativeSequence),
-                Boolean(entry.CacheHitPossible),
-                string.Empty,
-                entry.Confidence,
-                string.Join(" | ", entry.ConfidenceReasons),
-                string.Empty);
+                section,
+                "confidenceReasons",
+                string.Join(" | ", entry.ConfidenceReasons));
 
-            foreach (RepeatedMeasurementReportRun run in entry.Runs)
+            for (int runIndex = 0; runIndex < entry.Runs.Count; runIndex++)
             {
-                AppendCsvRow(
-                    builder,
-                    targetIndex + 1,
-                    "run",
-                    Number(run.Sequence),
-                    Boolean(run.IsWarmup),
-                    entry.TargetName,
-                    entry.PathKind,
-                    run.Status,
-                    Iso(run.StartedAt),
-                    Iso(run.CompletedAt),
-                    Number(run.DurationSeconds),
-                    Number(run.BytesReceived),
-                    Number(run.AverageMbps),
-                    Number(run.PeakMbps),
-                    Number(run.TimeToFirstByteMilliseconds),
-                    Number(run.HttpStatusCode),
-                    NullableBoolean(run.ProxyWasUsed),
-                    Number(run.StreamsRequested),
-                    Number(run.StreamsCompleted),
-                    Number(run.RedirectCount),
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    run.CacheClassification,
-                    run.Confidence,
-                    string.Empty,
-                    run.ErrorCode ?? string.Empty);
+                RepeatedMeasurementReportRun run = entry.Runs[runIndex];
+                string runSection = $"{section}.run.{runIndex + 1}";
+                AddCsv(builder, runSection, "sequence", FormatInvariant(run.Sequence));
+                AddCsv(builder, runSection, "isWarmup", FormatInvariant(run.IsWarmup));
+                AddCsv(builder, runSection, "status", run.Status);
+                AddCsv(builder, runSection, "startedAt", Iso(run.StartedAt));
+                AddCsv(builder, runSection, "completedAt", Iso(run.CompletedAt));
+                AddCsv(builder, runSection, "durationSeconds", FormatInvariant(run.DurationSeconds));
+                AddCsv(builder, runSection, "bytesReceived", FormatInvariant(run.BytesReceived));
+                AddCsv(builder, runSection, "averageMbps", FormatInvariant(run.AverageMbps));
+                AddCsv(builder, runSection, "peakMbps", FormatInvariant(run.PeakMbps));
+                AddCsv(builder, runSection, "ttfbMilliseconds", FormatInvariant(run.TimeToFirstByteMilliseconds));
+                AddCsv(builder, runSection, "httpStatusCode", FormatInvariant(run.HttpStatusCode));
+                AddCsv(builder, runSection, "proxyWasUsed", FormatInvariant(run.ProxyWasUsed));
+                AddCsv(builder, runSection, "streamsRequested", FormatInvariant(run.StreamsRequested));
+                AddCsv(builder, runSection, "streamsCompleted", FormatInvariant(run.StreamsCompleted));
+                AddCsv(builder, runSection, "redirectCount", FormatInvariant(run.RedirectCount));
+                AddCsv(builder, runSection, "cacheClassification", run.CacheClassification);
+                AddCsv(builder, runSection, "confidence", run.Confidence);
+                AddCsv(builder, runSection, "errorCode", run.ErrorCode ?? string.Empty);
             }
+        }
+
+        for (int index = 0; index < report.Limitations.Count; index++)
+        {
+            AddCsv(
+                builder,
+                "limitation",
+                (index + 1).ToString(CultureInfo.InvariantCulture),
+                report.Limitations[index]);
         }
 
         return builder.ToString();
@@ -284,10 +198,12 @@ public static class RepeatedMeasurementReportWriter
         builder.Append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
         builder.Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\">");
         builder.Append("<title>반복 다운로드 측정 보고서</title><style>");
-        builder.Append("body{margin:0;background:#f4f6f8;color:#17202a;font:14px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}main{max-width:1180px;margin:auto;padding:28px}h1{font-size:28px;margin:0}h2{font-size:19px;margin:0 0 12px}h3{font-size:16px;margin:18px 0 8px}.sub,.small{color:#566573}.card{background:#fff;border:1px solid #d8dde3;border-radius:12px;padding:18px;margin-top:16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.metric{background:#f8fafb;border-radius:8px;padding:12px}.metric strong{display:block;font-size:19px}.badge{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;background:#eaf2f8;color:#1b4f72}.high{background:#e8f6f3;color:#0e6251}.medium{background:#fff3cd;color:#7d6608}.low{background:#fdecea;color:#922b21}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #e8ebed;text-align:left;vertical-align:top}.scroll{overflow:auto}.privacy{background:#fff8e7;border-color:#e8ce8a}@media(max-width:640px){main{padding:16px}.grid{display:block}.metric{margin-top:8px}}@media print{body{background:#fff}.card{box-shadow:none;break-inside:avoid}main{max-width:none;padding:0}}</style></head><body><main>");
+        builder.Append("body{margin:0;background:#f4f6f8;color:#17202a;font:14px/1.55 system-ui,-apple-system,'Segoe UI',sans-serif}main{max-width:1180px;margin:auto;padding:28px}h1{font-size:28px;margin:0}h2{font-size:19px;margin:0 0 12px}.sub,.small{color:#566573}.card{background:#fff;border:1px solid #d8dde3;border-radius:12px;padding:18px;margin-top:16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.metric{background:#f8fafb;border-radius:8px;padding:12px}.metric strong{display:block;font-size:19px}.badge{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;background:#eaf2f8;color:#1b4f72}.high{background:#e8f6f3;color:#0e6251}.medium{background:#fff3cd;color:#7d6608}.low{background:#fdecea;color:#922b21}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #e8ebed;text-align:left;vertical-align:top}.scroll{overflow:auto}.privacy{background:#fff8e7;border-color:#e8ce8a}@media(max-width:640px){main{padding:16px}.grid{display:block}.metric{margin-top:8px}}@media print{body{background:#fff}.card{box-shadow:none;break-inside:avoid}main{max-width:none;padding:0}}</style></head><body><main>");
         builder.Append("<header><h1>반복 다운로드 측정 보고서</h1><div class=\"sub\">");
-        Html(builder, report.GeneratedAt.ToLocalTime()
-            .ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture));
+        Html(
+            builder,
+            report.GeneratedAt.ToLocalTime()
+                .ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture));
         builder.Append(" · 스키마 ");
         Html(builder, report.SchemaVersion);
         builder.Append("</div></header><section class=\"card privacy\"><h2>데이터 처리</h2><p>");
@@ -301,62 +217,7 @@ public static class RepeatedMeasurementReportWriter
 
         for (int index = 0; index < report.Measurements.Count; index++)
         {
-            RepeatedMeasurementReportEntry entry = report.Measurements[index];
-            builder.Append("<section class=\"card\"><h2>");
-            Html(builder, $"대상 {index + 1}: {entry.TargetName}");
-            builder.Append("</h2><p><span class=\"badge\">");
-            Html(builder, entry.PathKind);
-            builder.Append("</span> <span class=\"badge ");
-            Html(builder, ConfidenceCss(entry.Confidence));
-            builder.Append("\">신뢰도 ");
-            Html(builder, entry.Confidence);
-            builder.Append("</span></p><div class=\"grid\">");
-            Metric(builder, "대표 중앙값", Mbps(entry.MedianMbps));
-            Metric(builder, "최소~최대", $"{Mbps(entry.MinimumMbps)} ~ {Mbps(entry.MaximumMbps)}");
-            Metric(builder, "변동계수", Percent(entry.CoefficientOfVariation));
-            Metric(builder, "성공/계획", $"{entry.SuccessfulMeasurementCount}/{entry.PlannedMeasurementCount}");
-            Metric(builder, "실제 총 수신량", Bytes(entry.TotalBytesReceived));
-            Metric(builder, "캐시 적중 가능성", entry.CacheHitPossible ? "있음" : "확인되지 않음");
-            builder.Append("</div><p class=\"small\"><strong>신뢰도 근거:</strong> ");
-            Html(builder, string.Join(" · ", entry.ConfidenceReasons));
-            builder.Append("</p><p class=\"small\">예열: ");
-            Html(builder, entry.IncludeWarmup ? "사용" : "미사용");
-            builder.Append(" · 본 측정 ");
-            Html(builder, entry.RepeatCount.ToString(CultureInfo.InvariantCulture));
-            builder.Append("회 · 측정 간 대기 ");
-            Html(builder, entry.DelayMilliseconds.ToString(CultureInfo.InvariantCulture));
-            builder.Append("ms · 실패 ");
-            Html(builder, entry.FailedMeasurementCount.ToString(CultureInfo.InvariantCulture));
-            builder.Append("회 · 미완료 ");
-            Html(builder, entry.NotCompletedMeasurementCount.ToString(CultureInfo.InvariantCulture));
-            builder.Append("회</p><div class=\"scroll\"><table><thead><tr><th>회차</th><th>구분</th><th>상태</th><th>평균</th><th>최고 구간</th><th>소요</th><th>수신량</th><th>HTTP</th><th>프록시</th><th>신뢰도</th></tr></thead><tbody>");
-
-            foreach (RepeatedMeasurementReportRun run in entry.Runs)
-            {
-                builder.Append("<tr><td>");
-                Html(builder, run.IsWarmup ? "-" : run.Sequence.ToString(CultureInfo.InvariantCulture));
-                builder.Append("</td><td>");
-                Html(builder, run.IsWarmup ? "예열" : "본 측정");
-                builder.Append("</td><td>");
-                Html(builder, run.Status);
-                builder.Append("</td><td>");
-                Html(builder, Mbps(run.AverageMbps));
-                builder.Append("</td><td>");
-                Html(builder, Mbps(run.PeakMbps));
-                builder.Append("</td><td>");
-                Html(builder, $"{run.DurationSeconds:F2}초");
-                builder.Append("</td><td>");
-                Html(builder, Bytes(run.BytesReceived));
-                builder.Append("</td><td>");
-                Html(builder, run.HttpStatusCode?.ToString(CultureInfo.InvariantCulture) ?? "없음");
-                builder.Append("</td><td>");
-                Html(builder, run.ProxyWasUsed switch { true => "사용", false => "미사용", _ => "확인 불가" });
-                builder.Append("</td><td>");
-                Html(builder, run.Confidence);
-                builder.Append("</td></tr>");
-            }
-
-            builder.Append("</tbody></table></div></section>");
+            AppendMeasurementHtml(builder, report.Measurements[index], index + 1);
         }
 
         builder.Append("<section class=\"card\"><h2>판단 한계</h2><ul>");
@@ -368,6 +229,75 @@ public static class RepeatedMeasurementReportWriter
         }
         builder.Append("</ul></section><footer class=\"small\">현재 PC에서 생성한 로컬 보고서입니다.</footer></main></body></html>");
         return builder.ToString();
+    }
+
+    private static void AppendMeasurementHtml(
+        StringBuilder builder,
+        RepeatedMeasurementReportEntry entry,
+        int index)
+    {
+        builder.Append("<section class=\"card\"><h2>");
+        Html(builder, $"대상 {index}: {entry.TargetName}");
+        builder.Append("</h2><p><span class=\"badge\">");
+        Html(builder, entry.PathKind);
+        builder.Append("</span> <span class=\"badge ");
+        Html(builder, ConfidenceCss(entry.Confidence));
+        builder.Append("\">신뢰도 ");
+        Html(builder, entry.Confidence);
+        builder.Append("</span></p><div class=\"grid\">");
+        Metric(builder, "대표 중앙값", Mbps(entry.MedianMbps));
+        Metric(builder, "최소~최대", $"{Mbps(entry.MinimumMbps)} ~ {Mbps(entry.MaximumMbps)}");
+        Metric(builder, "변동계수", Percent(entry.CoefficientOfVariation));
+        Metric(builder, "성공/계획", $"{entry.SuccessfulMeasurementCount}/{entry.PlannedMeasurementCount}");
+        Metric(builder, "실제 총 수신량", Bytes(entry.TotalBytesReceived));
+        Metric(builder, "캐시 적중 가능성", entry.CacheHitPossible ? "있음" : "확인되지 않음");
+        builder.Append("</div><p class=\"small\"><strong>신뢰도 근거:</strong> ");
+        Html(builder, string.Join(" · ", entry.ConfidenceReasons));
+        builder.Append("</p><p class=\"small\">예열: ");
+        Html(builder, entry.IncludeWarmup ? "사용" : "미사용");
+        builder.Append(" · 본 측정 ");
+        Html(builder, entry.RepeatCount.ToString(CultureInfo.InvariantCulture));
+        builder.Append("회 · 측정 간 대기 ");
+        Html(builder, entry.DelayMilliseconds.ToString(CultureInfo.InvariantCulture));
+        builder.Append("ms · 실패 ");
+        Html(builder, entry.FailedMeasurementCount.ToString(CultureInfo.InvariantCulture));
+        builder.Append("회 · 미완료 ");
+        Html(builder, entry.NotCompletedMeasurementCount.ToString(CultureInfo.InvariantCulture));
+        builder.Append("회</p><div class=\"scroll\"><table><thead><tr><th>회차</th><th>구분</th><th>상태</th><th>평균</th><th>최고 구간</th><th>소요</th><th>수신량</th><th>HTTP</th><th>프록시</th><th>신뢰도</th></tr></thead><tbody>");
+
+        foreach (RepeatedMeasurementReportRun run in entry.Runs)
+        {
+            builder.Append("<tr><td>");
+            Html(builder, run.IsWarmup ? "-" : run.Sequence.ToString(CultureInfo.InvariantCulture));
+            builder.Append("</td><td>");
+            Html(builder, run.IsWarmup ? "예열" : "본 측정");
+            builder.Append("</td><td>");
+            Html(builder, run.Status);
+            builder.Append("</td><td>");
+            Html(builder, Mbps(run.AverageMbps));
+            builder.Append("</td><td>");
+            Html(builder, Mbps(run.PeakMbps));
+            builder.Append("</td><td>");
+            Html(builder, $"{run.DurationSeconds:F2}초");
+            builder.Append("</td><td>");
+            Html(builder, Bytes(run.BytesReceived));
+            builder.Append("</td><td>");
+            Html(builder, run.HttpStatusCode?.ToString(CultureInfo.InvariantCulture) ?? "없음");
+            builder.Append("</td><td>");
+            Html(
+                builder,
+                run.ProxyWasUsed switch
+                {
+                    true => "사용",
+                    false => "미사용",
+                    _ => "확인 불가"
+                });
+            builder.Append("</td><td>");
+            Html(builder, run.Confidence);
+            builder.Append("</td></tr>");
+        }
+
+        builder.Append("</tbody></table></div></section>");
     }
 
     private static RepeatedMeasurementReportEntry Map(
@@ -431,22 +361,17 @@ public static class RepeatedMeasurementReportWriter
             ErrorCode: SensitiveDataRedactor.RedactText(run.Result.ErrorCode));
     }
 
-    private static void AppendCsvRow(
+    private static void AddCsv(
         StringBuilder builder,
-        params object?[] values)
+        string section,
+        string key,
+        string value)
     {
-        for (int index = 0; index < values.Length; index++)
-        {
-            if (index > 0)
-            {
-                builder.Append(',');
-            }
-
-            builder.Append(Csv(Convert.ToString(
-                values[index],
-                CultureInfo.InvariantCulture) ?? string.Empty));
-        }
-        builder.AppendLine();
+        builder.Append(Csv(section));
+        builder.Append(',');
+        builder.Append(Csv(key));
+        builder.Append(',');
+        builder.AppendLine(Csv(value));
     }
 
     private static string Csv(string value)
@@ -455,17 +380,15 @@ public static class RepeatedMeasurementReportWriter
         return '"' + safe.Replace("\"", "\"\"") + '"';
     }
 
-    private static string Number<T>(T? value)
-        where T : struct, IFormattable =>
-        value.HasValue
-            ? value.Value.ToString(null, CultureInfo.InvariantCulture)
-            : string.Empty;
-
-    private static string Boolean(bool value) =>
-        value.ToString(CultureInfo.InvariantCulture);
-
-    private static string NullableBoolean(bool? value) =>
-        value.HasValue ? Boolean(value.Value) : string.Empty;
+    private static string FormatInvariant(object? value) =>
+        value switch
+        {
+            null => string.Empty,
+            IFormattable formattable =>
+                formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => Convert.ToString(value, CultureInfo.InvariantCulture)
+                ?? string.Empty
+        };
 
     private static string Iso(DateTimeOffset value) =>
         value.ToString("O", CultureInfo.InvariantCulture);
@@ -498,7 +421,9 @@ public static class RepeatedMeasurementReportWriter
         value.HasValue ? $"{value.Value:F1} Mbps" : "계산 안 함";
 
     private static string Percent(double? value) =>
-        value.HasValue ? value.Value.ToString("P1", CultureInfo.InvariantCulture) : "계산 안 함";
+        value.HasValue
+            ? value.Value.ToString("P1", CultureInfo.InvariantCulture)
+            : "계산 안 함";
 
     private static string Bytes(long bytes) =>
         bytes >= 1024L * 1024 * 1024
