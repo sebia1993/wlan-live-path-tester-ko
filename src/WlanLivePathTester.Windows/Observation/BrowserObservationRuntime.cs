@@ -8,6 +8,8 @@ public interface IBrowserObservationRuntime
 {
     bool IsSupportedPlatform { get; }
 
+    bool RequiresWorkerThread => false;
+
     DateTimeOffset UtcNow { get; }
 
     WlanReadResult ReadWlan();
@@ -36,6 +38,8 @@ internal sealed class WindowsBrowserObservationRuntime
     }
 
     public bool IsSupportedPlatform => OperatingSystem.IsWindows();
+
+    public bool RequiresWorkerThread => true;
 
     public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 
