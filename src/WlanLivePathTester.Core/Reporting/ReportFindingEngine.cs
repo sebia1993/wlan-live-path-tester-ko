@@ -1,3 +1,5 @@
+using WlanLivePathTester.Core.Observation;
+
 namespace WlanLivePathTester.Core.Reporting;
 
 public static class ReportFindingEngine
@@ -340,6 +342,8 @@ public static class ReportFindingEngine
             return;
         }
 
+        AddObservationTerminationFinding(findings, observation);
+
         if (observation.Confidence.Equals("Low", StringComparison.OrdinalIgnoreCase))
         {
             AddUnique(findings, new ReportFinding(
@@ -374,6 +378,146 @@ public static class ReportFindingEngine
                 Interpretation: "무선, 사내 경로, 프록시, 외부 사이트 또는 다른 트래픽의 영향을 비교해야 합니다.",
                 Limitation: "인터페이스 전체 카운터만으로 정지 원인을 특정할 수 없습니다.",
                 NextStep: "내부망과 복수 외부 대상의 자체 측정 및 WLAN 상태를 같은 위치에서 비교하십시오."));
+        }
+    }
+
+    private static void AddObservationTerminationFinding(
+        ICollection<ReportFinding> findings,
+        ReportObservationSection observation)
+    {
+        string rawReason = (observation.TerminationReason ?? string.Empty)
+            .Trim();
+        if (rawReason.Length == 0)
+        {
+            return;
+        }
+
+        if (!Enum.TryParse(
+                rawReason,
+                ignoreCase: true,
+                out BrowserObservationTerminationReason reason)
+            || reason == BrowserObservationTerminationReason.None)
+        {
+            AddUnique(findings, new ReportFinding(
+                Code: "BROWSER_OBSERVATION_TERMINATION_UNKNOWN",
+                Severity: "Warning",
+                Title: "알 수 없는 브라우저 관찰 종료 원인",
+                Evidence: $"브라우저 관찰 상태는 {observation.Status}이지만 지원되는 구조화 종료 원인으로 해석할 수 없습니다.",
+                Interpretation: "보고서 스키마와 프로그램 버전이 다르거나 종료 원인 값이 손상됐을 수 있습니다.",
+                Limitation: "알 수 없는 원문 값은 보고서 판정에 다시 노출하지 않았습니다.",
+                NextStep: "현재 프로그램 버전에서 관찰을 다시 실행해 새 보고서를 생성하십시오."));
+            return;
+        }
+
+        string evidence =
+            $"브라우저 관찰 상태는 {observation.Status}, 활성 샘플은 {observation.ActiveSampleCount ?? 0}개이며 구조화 종료 원인은 {reason}입니다.";
+        ReportFinding? finding = reason switch
+        {
+            BrowserObservationTerminationReason.Completed =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_COMPLETED",
+                    Severity: "Information",
+                    Title: "브라우저 관찰 정상 완료",
+                    Evidence: evidence,
+                    Interpretation: "계획된 관찰 절차가 정상 종료됐습니다. 처리량 품질은 신뢰도·로밍·정지·급락 지표와 함께 판단해야 합니다.",
+                    Limitation: "정상 완료는 WLAN 또는 서비스 성능이 정상이라는 뜻이 아닙니다.",
+                    NextStep: "내부·외부 측정, RSSI와 PHY 링크 속도를 같은 시점의 근거와 함께 비교하십시오."),
+            BrowserObservationTerminationReason.CanceledByUser =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_CANCELED_BY_USER",
+                    Severity: "Information",
+                    Title: "사용자가 브라우저 관찰 중지",
+                    Evidence: evidence,
+                    Interpretation: "장애로 강제 종료된 것이 아니라 사용자 요청으로 관찰이 끝났으며, 저장된 샘플만 참고할 수 있습니다.",
+                    Limitation: "관찰 시간이 짧거나 다운로드 구간을 충분히 포함하지 않으면 대표성이 낮습니다.",
+                    NextStep: "비교가 필요하면 같은 조건에서 계획한 관찰 시간을 끝까지 다시 실행하십시오."),
+            BrowserObservationTerminationReason.AdapterChanged =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_ADAPTER_CHANGED",
+                    Severity: "Warning",
+                    Title: "관찰 중 물리 Wi-Fi 인터페이스 변경",
+                    Evidence: evidence,
+                    Interpretation: "서로 다른 물리 NIC의 누적 카운터를 결합하지 않도록 관찰이 중단됐습니다.",
+                    Limitation: "실제 내장·USB Wi-Fi 전환, 드라이버 재시작 또는 Native WLAN ID 조회 변화 중 어느 원인인지는 이 결과만으로 확정할 수 없습니다.",
+                    NextStep: "다중 Wi-Fi 상태, 장치 관리자, Windows WLAN 보고서와 관찰 시점의 인터페이스 변경 로그를 확인하십시오."),
+            BrowserObservationTerminationReason.AdapterUnavailable =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_ADAPTER_UNAVAILABLE",
+                    Severity: "Warning",
+                    Title: "고정 Wi-Fi 인터페이스 사용 불가",
+                    Evidence: evidence,
+                    Interpretation: "관찰 시작 시 고정한 물리 Wi-Fi가 Down·제거됐거나 누적 통계를 더 이상 읽을 수 없습니다.",
+                    Limitation: "USB 분리, 절전 정책, 드라이버 재시작, 권한 또는 보안 제품 제한이 같은 결과를 만들 수 있습니다.",
+                    NextStep: "장치 상태와 전원 관리, 드라이버 이벤트, WLAN AutoConfig 및 EDR 정책을 확인한 뒤 다시 관찰하십시오."),
+            BrowserObservationTerminationReason.CounterProviderMismatch =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_COUNTER_PROVIDER_MISMATCH",
+                    Severity: "Warning",
+                    Title: "WLAN ID와 카운터 공급자 불일치",
+                    Evidence: evidence,
+                    Interpretation: "Native WLAN에서 확인한 물리 NIC와 로컬 NetworkInterface 카운터 후보를 안전하게 동일 장치로 확정하지 못했습니다.",
+                    Limitation: "중복 설명, 가상 무선 어댑터, 드라이버별 ID 표현 또는 권한 제한이 원인일 수 있습니다.",
+                    NextStep: "어댑터 진단에서 내장·USB Wi-Fi, Wi-Fi Direct와 가상 NIC를 확인하고 불필요한 후보를 비활성화한 뒤 다시 실행하십시오."),
+            BrowserObservationTerminationReason.SystemSuspend =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_SYSTEM_SUSPEND",
+                    Severity: "Warning",
+                    Title: "시스템 절전으로 브라우저 관찰 중단",
+                    Evidence: evidence,
+                    Interpretation: "전원 전환 전후의 긴 시간 간격과 누적 카운터를 한 세션으로 합치지 않도록 관찰이 종료됐습니다.",
+                    Limitation: "Modern Standby, 최대 절전, 드라이버 전원 관리와 운영체제 메시지 순서는 장치별로 다를 수 있습니다.",
+                    NextStep: "절전이 발생하지 않는 상태에서 관찰을 다시 실행하고 필요하면 Windows 전원 및 시스템 이벤트를 확인하십시오."),
+            BrowserObservationTerminationReason.TimingDiscontinuity =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_TIMING_DISCONTINUITY",
+                    Severity: "Warning",
+                    Title: "브라우저 관찰 샘플 시간 연속성 중단",
+                    Evidence: evidence,
+                    Interpretation: "샘플 간격이 허용 범위를 벗어나 비정상 구간의 바이트 델타를 처리량 통계에 포함하지 않았습니다.",
+                    Limitation: "절전 메시지 누락, 드라이버 정지, CPU 부하 또는 스케줄러 지연이 같은 결과를 만들 수 있습니다.",
+                    NextStep: "전원·드라이버·시스템 이벤트를 확인하고 부하가 낮은 상태에서 동일 관찰을 다시 실행하십시오."),
+            BrowserObservationTerminationReason.InvalidOptions =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_INVALID_OPTIONS",
+                    Severity: "Warning",
+                    Title: "브라우저 관찰 설정 오류",
+                    Evidence: evidence,
+                    Interpretation: "관찰 시간 또는 샘플 간격이 허용 범위를 벗어나 실행이 시작되지 않았습니다.",
+                    Limitation: "이 결과에는 실제 다운로드 관찰 샘플이 없을 수 있습니다.",
+                    NextStep: "기준 시간 2~15초, 관찰 시간 5~600초, 샘플 간격 500~2000ms 범위로 다시 실행하십시오."),
+            BrowserObservationTerminationReason.UnsupportedPlatform =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_UNSUPPORTED_PLATFORM",
+                    Severity: "Warning",
+                    Title: "브라우저 관찰 실행 환경 미지원",
+                    Evidence: evidence,
+                    Interpretation: "필요한 Windows WLAN 또는 네트워크 인터페이스 API를 사용할 수 없어 관찰을 수행하지 못했습니다.",
+                    Limitation: "가상화·호환 계층 또는 제한된 Windows 환경에서도 같은 결과가 발생할 수 있습니다.",
+                    NextStep: "지원되는 Windows 11 x64 환경에서 실행하고 필요한 로컬 API 사용 권한을 확인하십시오."),
+            BrowserObservationTerminationReason.NoWirelessConnection =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_NO_WLAN_CONNECTION",
+                    Severity: "Warning",
+                    Title: "연결된 WLAN 없이 관찰 시작",
+                    Evidence: evidence,
+                    Interpretation: "관찰 시작 시 Native WLAN에서 연결된 물리 Wi-Fi를 확인하지 못했습니다.",
+                    Limitation: "Wi-Fi 비활성화, WlanSvc 상태, 권한 또는 연결 전환 중에도 같은 결과가 발생할 수 있습니다.",
+                    NextStep: "Wi-Fi 연결과 WLAN AutoConfig 서비스를 확인한 뒤 관찰을 다시 시작하십시오."),
+            BrowserObservationTerminationReason.Failed =>
+                new ReportFinding(
+                    Code: "BROWSER_OBSERVATION_FAILED",
+                    Severity: "Warning",
+                    Title: "브라우저 관찰 실행 오류",
+                    Evidence: evidence,
+                    Interpretation: "현재 구조화 범주로 더 세분화되지 않은 오류로 관찰이 끝났습니다.",
+                    Limitation: "보고서의 마스킹된 메시지만으로 예외 발생 지점을 완전히 확정할 수 없습니다.",
+                    NextStep: "관찰 메시지, Windows 이벤트와 같은 조건의 재현 결과를 확인하고 필요하면 로컬 디버그 로그를 수집하십시오."),
+            _ => null
+        };
+
+        if (finding is not null)
+        {
+            AddUnique(findings, finding);
         }
     }
 
