@@ -4,13 +4,73 @@
 
 ## [Unreleased]
 
+### Added
+
+- 물리 Wi-Fi, 유선, VPN·터널, Wi-Fi Direct와 주요 가상 어댑터의 로컬 분류
+- Native WLAN 인터페이스와 Windows `NetworkInterface` ID·설명의 결정론적 대응
+- 다중 Wi-Fi, VPN과 가상 NIC 환경을 확인하는 로컬 진단 탭과 전용 JSON·CSV·단일 HTML 보고서
+- 브라우저 관찰 시작 시 선택된 물리 Wi-Fi 카운터 ID 고정
+- `AdapterChanged`, `AdapterUnavailable`, `CounterProviderMismatch` 브라우저 관찰 종료 상태
+- 초기 WLAN·카운터 ID 충돌, 관찰 중 WLAN ID 변경과 카운터 공급자 불일치 정책
+- 고정 ID 선택·연속성·보고서 상태 매핑에 대한 ObservationSmoke·ReportSmoke
+- 기본 Windows PR CI의 브라우저 관찰 Smoke 단계
+
+### Changed
+
+- 브라우저 관찰 후속 샘플은 시작 시 고정한 인터페이스 ID만 사용하고 설명 또는 다른 활성 Wi-Fi로 자동 전환하지 않음
+- 같은 물리 Wi-Fi에서 BSSID만 바뀌는 로밍과 물리 NIC 변경을 별도로 처리
+- 어댑터 진단·어댑터 보고서 기능을 실제 WPF 앱 활성화 경로에 연결
+- 인터페이스 ID 정규화를 공용 결정론적 유틸리티로 통합
+
+### Fixed
+
+- 현재 런타임 승인 정책이 교체할 새 대상 설정의 정의 검증을 방해하던 상태 의존성
+- 어댑터 안정성 코드 일부만 병합돼 기본 `main` Release 빌드가 실패하던 누락 유틸리티와 미연결 partial class 참조
+- 관찰 중 Native WLAN이 다른 NIC로 바뀌면 선호 ID를 새 값으로 갱신해 서로 다른 카운터를 이어서 사용할 수 있던 문제
+- 카운터 공급자가 고정한 ID와 다른 NIC를 반환해도 샘플 생성까지 진행할 수 있던 방어 경계
+
+### Security
+
+- 정확 ID 강제 모드에서 같은 설명의 다른 Wi-Fi로의 fallback 차단
+- IP·MAC·게이트웨이 주소와 전체 인터페이스 GUID를 어댑터 보고서와 외부 전송에서 제외
+- 새 진단·검증 기능은 로컬 WLAN·인터페이스 정보만 사용하며 외부 요청, AI, 텔레메트리와 업로드를 추가하지 않음
+
 ### Planned
 
 - `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반 비동기 WinHTTP 전송 계층
-- 관리자 강제 승인 대상 정책과 ProgramData 배포 우선순위
-- 외부 DIRECT 모드가 추가될 경우 A/AAAA 주소 및 DNS 리바인딩 검증
+- 목적지별 Windows route·interface metric을 개인정보 노출 없이 요약하는 로컬 경로 판정
 - Authenticode 인증서 확보 후 빌드 서명과 서명 검증
 - 실제 Windows 11·Aruba WLAN·회사 프록시 검증 결과 기반 호환성 수정
+- 절전·재연결·USB Wi-Fi 제거·VPN 전환 장시간 안정성 시험
+
+## [0.1.0-alpha.4] - 2026-09-04
+
+### Added
+
+- 로컬 Wi-Fi·유선·VPN·가상 인터페이스 환경 요약
+- 다중 기본 게이트웨이, 유선·무선 동시 경로, VPN·가상 NIC 경고
+- IP·게이트웨이·DNS·MAC 원문을 제외한 인터페이스 환경 JSON·CSV·단일 HTML 보고서
+- Native WLAN과 로컬 NIC 대응을 위한 기반 모델과 Windows 환경 Smoke
+
+### Security
+
+- 인터페이스 환경 수집은 로컬 `NetworkInterface` 정보만 사용하고 DNS·HTTP·외부 API 요청을 수행하지 않음
+- 구조화 보고서에서 인터페이스 이름·설명·GUID·IP·게이트웨이·DNS·MAC 주소 원문 제외
+
+## [0.1.0-alpha.3] - 2026-09-04
+
+### Added
+
+- `%ProgramData%\WLAN Live Path Tester KO\targets.json` 관리자 승인 대상 정책
+- 관리자 강제 정책에서 미등록 URL과 변경된 실행 제한의 Core 차단
+- 손상되거나 읽을 수 없는 관리자 정책의 fail-closed 다운로드 차단
+- 최대 1MiB, 엄격 UTF-8, reparse point 거부를 포함한 로컬 설정 파일 경계
+- 관리자 정책 배포·ACL·실환경 검증 문서
+
+### Changed
+
+- 관리자 ProgramData 설정을 사용자·Portable 설정보다 우선 적용
+- 새 설정 정의 검증과 현재 런타임 정책 집행을 분리해 안전한 정책 교체 허용
 
 ## [0.1.0-alpha.2] - 2026-09-04
 

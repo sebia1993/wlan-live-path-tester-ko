@@ -1,5 +1,19 @@
 namespace WlanLivePathTester.Core.Adapters;
 
+public static class NetworkAdapterIdentity
+{
+    public static string Normalize(string? value)
+    {
+        string trimmed = (value ?? string.Empty).Trim();
+        if (Guid.TryParse(trimmed, out Guid guid))
+        {
+            return guid.ToString("D");
+        }
+
+        return trimmed.Trim('{', '}').ToLowerInvariant();
+    }
+}
+
 public enum AdapterIdentityStabilityStatus
 {
     Stable,
@@ -24,7 +38,8 @@ public sealed class AdapterIdentityStabilityTracker
         string expectedIdentity,
         int mismatchThreshold = 3)
     {
-        _expectedIdentity = Normalize(expectedIdentity);
+        _expectedIdentity = NetworkAdapterIdentity.Normalize(
+            expectedIdentity);
         if (string.IsNullOrWhiteSpace(_expectedIdentity))
         {
             throw new ArgumentException(
@@ -60,7 +75,8 @@ public sealed class AdapterIdentityStabilityTracker
                 "Wi-Fi 인터페이스 ID 변경이 이미 확정되었습니다.");
         }
 
-        string normalizedCurrent = Normalize(currentIdentity);
+        string normalizedCurrent = NetworkAdapterIdentity.Normalize(
+            currentIdentity);
         if (normalizedCurrent.Equals(
                 _expectedIdentity,
                 StringComparison.OrdinalIgnoreCase))
@@ -96,14 +112,6 @@ public sealed class AdapterIdentityStabilityTracker
                 : "Wi-Fi 인터페이스 ID를 연속해서 확인하지 못해 연결 변경으로 처리했습니다.");
     }
 
-    public static string Normalize(string? value)
-    {
-        string trimmed = (value ?? string.Empty).Trim();
-        if (Guid.TryParse(trimmed, out Guid guid))
-        {
-            return guid.ToString("D");
-        }
-
-        return trimmed.Trim('{', '}').ToLowerInvariant();
-    }
+    public static string Normalize(string? value) =>
+        NetworkAdapterIdentity.Normalize(value);
 }

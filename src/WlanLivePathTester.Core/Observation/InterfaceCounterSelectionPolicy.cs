@@ -1,5 +1,11 @@
 namespace WlanLivePathTester.Core.Observation;
 
+public enum InterfaceCounterSelectionMode
+{
+    PreferExactIdentityThenDescription,
+    RequireExactInterfaceId
+}
+
 public enum InterfaceCounterSelectionStatus
 {
     SelectedByInterfaceId,
@@ -36,7 +42,9 @@ public static class InterfaceCounterSelectionPolicy
     public static InterfaceCounterSelectionDecision Select(
         IReadOnlyList<InterfaceCounterCandidate> candidates,
         string? preferredInterfaceId,
-        string? preferredInterfaceDescription)
+        string? preferredInterfaceDescription,
+        InterfaceCounterSelectionMode mode =
+            InterfaceCounterSelectionMode.PreferExactIdentityThenDescription)
     {
         ArgumentNullException.ThrowIfNull(candidates);
 
@@ -47,27 +55,31 @@ public static class InterfaceCounterSelectionPolicy
         {
             return Failure(
                 InterfaceCounterSelectionStatus.NoWirelessInterface,
-                "로컬 인터페이스 목록에 Wi-Fi 어댑터가 없습니다.");
+                "로컬 인터페이스 목록에 물리 Wi-Fi 후보가 없습니다.");
         }
 
+        string normalizedPreferredId =
+            ObservationInterfaceBindingPolicy.NormalizeInterfaceId(
+                preferredInterfaceId);
         bool idWasSupplied = !string.IsNullOrWhiteSpace(
-            preferredInterfaceId);
-        string? normalizedPreferredId = NormalizeGuid(
-            preferredInterfaceId);
-        if (normalizedPreferredId is not null)
+            normalizedPreferredId);
+
+        if (idWasSupplied)
         {
             InterfaceCounterCandidate[] idMatches = wireless
-                .Where(candidate => string.Equals(
-                    NormalizeGuid(candidate.InterfaceId),
-                    normalizedPreferredId,
-                    StringComparison.OrdinalIgnoreCase))
+                .Where(candidate =>
+                    ObservationInterfaceBindingPolicy.NormalizeInterfaceId(
+                            candidate.InterfaceId)
+                        .Equals(
+                            normalizedPreferredId,
+                            StringComparison.OrdinalIgnoreCase))
                 .ToArray();
 
             if (idMatches.Length > 1)
             {
                 return Failure(
                     InterfaceCounterSelectionStatus.AmbiguousWirelessInterfaces,
-                    "같은 인터페이스 GUID를 가진 Wi-Fi 후보가 여러 개여서 관찰 대상을 선택하지 않았습니다.");
+                    "같은 인터페이스 ID를 가진 Wi-Fi 후보가 여러 개여서 관찰 대상을 선택하지 않았습니다.");
             }
 
             if (idMatches.Length == 1)
@@ -75,8 +87,19 @@ public static class InterfaceCounterSelectionPolicy
                 return SelectMatched(
                     idMatches[0],
                     InterfaceCounterSelectionStatus.SelectedByInterfaceId,
-                    "Native WLAN 인터페이스 GUID와 정확히 일치하는 Wi-Fi 카운터를 선택했습니다.");
+                    mode == InterfaceCounterSelectionMode.RequireExactInterfaceId
+                        ? "시작 시 고정한 인터페이스 ID와 정확히 일치하는 Wi-Fi 카운터를 선택했습니다."
+                        : "Native WLAN 인터페이스 ID와 정확히 일치하는 Wi-Fi 카운터를 선택했습니다.");
             }
+        }
+
+        if (mode == InterfaceCounterSelectionMode.RequireExactInterfaceId)
+        {
+            return Failure(
+                InterfaceCounterSelectionStatus.PreferredInterfaceNotFound,
+                idWasSupplied
+                    ? "시작 시 고정한 Wi-Fi 인터페이스 ID를 현재 로컬 목록에서 찾지 못했습니다."
+                    : "정확히 고정할 Wi-Fi 인터페이스 ID가 없어 카운터를 선택하지 않았습니다.");
         }
 
         bool descriptionWasSupplied = !string.IsNullOrWhiteSpace(
@@ -123,21 +146,21 @@ public static class InterfaceCounterSelectionPolicy
         {
             return Failure(
                 InterfaceCounterSelectionStatus.NoActiveWirelessInterface,
-                "Up 상태인 Wi-Fi 인터페이스가 없어 관찰 대상을 선택하지 않았습니다.");
+                "Up 상태인 물리 Wi-Fi 인터페이스가 없어 관찰 대상을 선택하지 않았습니다.");
         }
 
         if (activeWireless.Length > 1)
         {
             return Failure(
                 InterfaceCounterSelectionStatus.AmbiguousWirelessInterfaces,
-                "활성 Wi-Fi 인터페이스가 여러 개이고 Native WLAN 식별정보가 없어 임의 선택하지 않았습니다.");
+                "활성 물리 Wi-Fi 인터페이스가 여러 개이고 Native WLAN 식별정보가 없어 임의 선택하지 않았습니다.");
         }
 
         return new InterfaceCounterSelectionDecision(
             Status:
                 InterfaceCounterSelectionStatus.SelectedSingleActiveWireless,
             SelectedCandidateIndex: activeWireless[0].CandidateIndex,
-            Message: "활성 Wi-Fi 인터페이스가 정확히 한 개여서 해당 카운터를 선택했습니다.");
+            Message: "활성 물리 Wi-Fi 인터페이스가 정확히 한 개여서 해당 카운터를 선택했습니다.");
     }
 
     private static InterfaceCounterSelectionDecision SelectMatched(
@@ -165,19 +188,6 @@ public static class InterfaceCounterSelectionPolicy
             Status: status,
             SelectedCandidateIndex: null,
             Message: message);
-
-    private static string? NormalizeGuid(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        string trimmed = value.Trim().Trim('{', '}');
-        return Guid.TryParse(trimmed, out Guid parsed)
-            ? parsed.ToString("D")
-            : null;
-    }
 
     private static string NormalizeDescription(string? value) =>
         string.Join(

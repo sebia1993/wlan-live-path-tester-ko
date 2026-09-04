@@ -65,6 +65,12 @@ public static class NetworkAdapterSelector
         "softap"
     ];
 
+    private static readonly string[] BluetoothMarkers =
+    [
+        "bluetooth",
+        "personal area network"
+    ];
+
     private static readonly string[] VpnMarkers =
     [
         "vpn",
@@ -80,10 +86,16 @@ public static class NetworkAdapterSelector
         "anyconnect",
         "secure client",
         "globalprotect",
+        "pangp",
         "pulse secure",
         "juniper",
         "fortinet ssl",
-        "forticlient"
+        "forticlient",
+        "checkpoint",
+        "check point",
+        "zscaler",
+        "netskope",
+        "cloudflare warp"
     ];
 
     private static readonly string[] VirtualSwitchMarkers =
@@ -115,8 +127,12 @@ public static class NetworkAdapterSelector
             .Select(Classify)
             .OrderBy(item => RoleSortOrder(item.Role))
             .ThenByDescending(item => item.WirelessSelectionScore)
-            .ThenBy(item => DisplayName(item.Candidate), StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.Candidate.Id, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(
+                item => DisplayName(item.Candidate),
+                StringComparer.OrdinalIgnoreCase)
+            .ThenBy(
+                item => item.Candidate.Id,
+                StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         ClassifiedNetworkAdapter[] physicalWireless = inventory
@@ -151,7 +167,8 @@ public static class NetworkAdapterSelector
                 Message: "물리 Wi-Fi 후보는 있지만 현재 Up 상태인 어댑터가 없습니다.");
         }
 
-        int highestScore = connected.Max(item => item.WirelessSelectionScore);
+        int highestScore = connected.Max(
+            item => item.WirelessSelectionScore);
         ClassifiedNetworkAdapter[] highest = connected
             .Where(item => item.WirelessSelectionScore == highestScore)
             .ToArray();
@@ -193,38 +210,48 @@ public static class NetworkAdapterSelector
             role = NetworkAdapterRole.Loopback;
             reasons.Add("NetworkInterfaceType.Loopback");
         }
+        else if (ContainsAny(searchable, BluetoothMarkers))
+        {
+            role = NetworkAdapterRole.Bluetooth;
+            reasons.Add("Bluetooth 또는 Personal Area Network 식별 문자열");
+        }
         else if (candidate.InterfaceType == NetworkInterfaceType.Ppp
+                 || candidate.InterfaceType == NetworkInterfaceType.Tunnel
                  || ContainsAny(searchable, VpnMarkers))
         {
             role = NetworkAdapterRole.VpnOrTunnel;
-            reasons.Add(candidate.InterfaceType == NetworkInterfaceType.Ppp
-                ? "NetworkInterfaceType.Ppp"
-                : "VPN 또는 터널 식별 문자열");
+            reasons.Add(candidate.InterfaceType switch
+            {
+                NetworkInterfaceType.Ppp => "NetworkInterfaceType.Ppp",
+                NetworkInterfaceType.Tunnel => "NetworkInterfaceType.Tunnel",
+                _ => "VPN 또는 터널 식별 문자열"
+            });
         }
         else if (ContainsAny(searchable, WiFiDirectMarkers))
         {
             role = NetworkAdapterRole.WiFiDirectOrHosted;
-            reasons.Add("Wi-Fi Direct, Hosted Network 또는 SoftAP 식별 문자열");
+            reasons.Add(
+                "Wi-Fi Direct, Hosted Network 또는 SoftAP 식별 문자열");
         }
         else if (ContainsAny(searchable, VirtualSwitchMarkers))
         {
             role = NetworkAdapterRole.VirtualSwitch;
-            reasons.Add("Hyper-V, VMware, VirtualBox, WSL 또는 컨테이너 식별 문자열");
+            reasons.Add(
+                "Hyper-V, VMware, VirtualBox, WSL 또는 컨테이너 식별 문자열");
         }
-        else if (candidate.InterfaceType == NetworkInterfaceType.Tunnel)
-        {
-            role = NetworkAdapterRole.VpnOrTunnel;
-            reasons.Add("NetworkInterfaceType.Tunnel");
-        }
-        else if (candidate.InterfaceType == NetworkInterfaceType.Wireless80211)
+        else if (candidate.InterfaceType ==
+                 NetworkInterfaceType.Wireless80211)
         {
             role = NetworkAdapterRole.PhysicalWireless;
             reasons.Add("NetworkInterfaceType.Wireless80211");
         }
         else if (candidate.InterfaceType == NetworkInterfaceType.Ethernet
-                 || candidate.InterfaceType == NetworkInterfaceType.GigabitEthernet
-                 || candidate.InterfaceType == NetworkInterfaceType.FastEthernetFx
-                 || candidate.InterfaceType == NetworkInterfaceType.FastEthernetT)
+                 || candidate.InterfaceType ==
+                    NetworkInterfaceType.GigabitEthernet
+                 || candidate.InterfaceType ==
+                    NetworkInterfaceType.FastEthernetFx
+                 || candidate.InterfaceType ==
+                    NetworkInterfaceType.FastEthernetT)
         {
             role = ContainsAny(searchable, OtherVirtualMarkers)
                 ? NetworkAdapterRole.OtherVirtual
@@ -233,7 +260,8 @@ public static class NetworkAdapterSelector
                 ? "일반 가상 어댑터 식별 문자열"
                 : "Ethernet 계열 인터페이스 유형");
         }
-        else if (candidate.InterfaceType == NetworkInterfaceType.Ethernet3Megabit
+        else if (candidate.InterfaceType ==
+                 NetworkInterfaceType.Ethernet3Megabit
                  && ContainsAny(searchable, OtherVirtualMarkers))
         {
             role = NetworkAdapterRole.OtherVirtual;
@@ -248,7 +276,8 @@ public static class NetworkAdapterSelector
         else
         {
             role = NetworkAdapterRole.Unknown;
-            reasons.Add($"분류되지 않은 인터페이스 유형: {candidate.InterfaceType}");
+            reasons.Add(
+                $"분류되지 않은 인터페이스 유형: {candidate.InterfaceType}");
         }
 
         int score = role == NetworkAdapterRole.PhysicalWireless
@@ -317,9 +346,9 @@ public static class NetworkAdapterSelector
         }
 
         int activeVirtual = inventory.Count(item =>
-            item.Role is NetworkAdapterRole.VirtualSwitch
+            (item.Role is NetworkAdapterRole.VirtualSwitch
                 or NetworkAdapterRole.WiFiDirectOrHosted
-                or NetworkAdapterRole.OtherVirtual
+                or NetworkAdapterRole.OtherVirtual)
             && item.Candidate.OperationalStatus == OperationalStatus.Up);
         if (activeVirtual > 0)
         {
@@ -343,7 +372,8 @@ public static class NetworkAdapterSelector
             marker,
             StringComparison.OrdinalIgnoreCase));
 
-    private static string DisplayName(NetworkAdapterCandidate candidate) =>
+    private static string DisplayName(
+        NetworkAdapterCandidate candidate) =>
         string.IsNullOrWhiteSpace(candidate.Name)
             ? candidate.Description
             : candidate.Name;
