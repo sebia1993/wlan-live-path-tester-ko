@@ -120,10 +120,14 @@ public static class TargetHostPolicy
     private static string Normalize(string? host)
     {
         string trimmed = (host ?? string.Empty).Trim().TrimEnd('.');
-        if (string.IsNullOrWhiteSpace(trimmed)
-            || IPAddress.TryParse(trimmed, out IPAddress? address))
+        if (string.IsNullOrWhiteSpace(trimmed))
         {
-            return address?.ToString() ?? trimmed;
+            return trimmed;
+        }
+
+        if (IPAddress.TryParse(trimmed, out IPAddress? address))
+        {
+            return address.ToString();
         }
 
         try
