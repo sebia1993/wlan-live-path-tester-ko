@@ -1,0 +1,51 @@
+name: Prerelease Branch Trigger
+
+on:
+  push:
+    branches:
+      - "release-trigger/v*"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: prerelease-branch-trigger-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: validate-and-dispatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Derive prerelease tag from branch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $branch = '${{ github.ref_name }}'
+          $pattern = '^release-trigger/(?<tag>v(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-[0-9A-Za-z.-]+))$'
+          if ($branch -notmatch $pattern) {
+              throw "Invalid prerelease trigger branch: $branch"
+          }
+
+          $tag = $Matches['tag']
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Validated prerelease tag: $tag"
+
+      - name: Dispatch verified manual prerelease workflow
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh workflow run manual-prerelease.yml `
+              --repo $env:GITHUB_REPOSITORY `
+              --ref main `
+              -f "tag=$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Unable to dispatch the Manual Prerelease workflow.'
+          }
+
+          Write-Host "Dispatched Manual Prerelease for $env:RELEASE_TAG" -ForegroundColor Green
