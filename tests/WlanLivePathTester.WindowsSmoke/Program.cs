@@ -224,17 +224,18 @@ internal static class Program
             return false;
         }
 
-        WlanInterfaceIdentity secondIdentity = synthetic.Interfaces[0] with
-        {
-            InterfaceId = "C1B2C3D4-E5F6-47A8-9123-1234567890AB"
-        };
+        WlanInterfaceIdentity originalIdentity = synthetic.Interfaces[0];
+        WlanInterfaceIdentity secondIdentity = new(
+            InterfaceId: "C1B2C3D4-E5F6-47A8-9123-1234567890AB",
+            Description: originalIdentity.Description,
+            IsConnected: originalIdentity.IsConnected);
         WlanInterfaceIdentityReadResult duplicates = synthetic with
         {
-            Interfaces:
-            [
-                synthetic.Interfaces[0],
+            Interfaces = new WlanInterfaceIdentity[]
+            {
+                originalIdentity,
                 secondIdentity
-            ]
+            }
         };
         WlanSnapshot? duplicateResult =
             WlanInterfaceIdentityReader.AttachIdentity(snapshot, duplicates);
@@ -244,14 +245,16 @@ internal static class Program
             return false;
         }
 
-        WlanInterfaceIdentity disconnectedIdentity =
-            synthetic.Interfaces[0] with
-            {
-                IsConnected = false
-            };
+        WlanInterfaceIdentity disconnectedIdentity = new(
+            InterfaceId: originalIdentity.InterfaceId,
+            Description: originalIdentity.Description,
+            IsConnected: false);
         WlanInterfaceIdentityReadResult disconnected = synthetic with
         {
-            Interfaces: [disconnectedIdentity]
+            Interfaces = new WlanInterfaceIdentity[]
+            {
+                disconnectedIdentity
+            }
         };
         WlanSnapshot? disconnectedResult =
             WlanInterfaceIdentityReader.AttachIdentity(snapshot, disconnected);
