@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### Planned
+
+- `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반 비동기 WinHTTP 전송 계층
+- 목적지별 Windows route·interface metric을 개인정보 노출 없이 요약하는 로컬 경로 판정
+- Authenticode 인증서 확보 후 빌드 서명과 서명 검증
+- 실제 Windows 11·Aruba WLAN·회사 프록시 검증 결과 기반 호환성 수정
+- 절전·재연결·USB Wi-Fi 제거·VPN 전환 장시간 안정성 시험
+
+## [0.1.0-alpha.5] - 2026-09-04
+
 ### Added
 
 - 물리 Wi-Fi, 유선, VPN·터널, Wi-Fi Direct와 주요 가상 어댑터의 로컬 분류
@@ -14,18 +24,23 @@
 - 초기 WLAN·카운터 ID 충돌, 관찰 중 WLAN ID 변경과 카운터 공급자 불일치 정책
 - 고정 ID 선택·연속성·보고서 상태 매핑에 대한 ObservationSmoke·ReportSmoke
 - 기본 Windows PR CI의 브라우저 관찰 Smoke 단계
+- Portable ZIP에 다운로드, 프록시 경로, 관리자 정책, 인터페이스 환경, WLAN NIC 대응과 어댑터 진단 문서 포함
 
 ### Changed
 
 - 브라우저 관찰 후속 샘플은 시작 시 고정한 인터페이스 ID만 사용하고 설명 또는 다른 활성 Wi-Fi로 자동 전환하지 않음
 - 같은 물리 Wi-Fi에서 BSSID만 바뀌는 로밍과 물리 NIC 변경을 별도로 처리
-- 어댑터 진단·어댑터 보고서 기능을 실제 WPF 앱 활성화 경로에 연결
+- 어댑터 진단·WLAN NIC 대응·인터페이스 환경·어댑터 보고서 기능을 실제 WPF 앱 활성화 경로에 연결
+- 어댑터 진단도 WLAN identity를 보완한 뒤 Native WLAN 연결 ID 우선순위를 적용
 - 인터페이스 ID 정규화를 공용 결정론적 유틸리티로 통합
+- Portable ZIP의 필수 운영 문서 목록을 패키지 검사에서 검증
 
 ### Fixed
 
 - 현재 런타임 승인 정책이 교체할 새 대상 설정의 정의 검증을 방해하던 상태 의존성
 - 어댑터 안정성 코드 일부만 병합돼 기본 `main` Release 빌드가 실패하던 누락 유틸리티와 미연결 partial class 참조
+- Bluetooth PAN이 물리 Ethernet으로 분류되던 우선순위
+- PANGP·Zscaler·Netskope·WARP·Check Point 등 기업 VPN·터널 식별 규칙 누락
 - 관찰 중 Native WLAN이 다른 NIC로 바뀌면 선호 ID를 새 값으로 갱신해 서로 다른 카운터를 이어서 사용할 수 있던 문제
 - 카운터 공급자가 고정한 ID와 다른 NIC를 반환해도 샘플 생성까지 진행할 수 있던 방어 경계
 
@@ -34,14 +49,6 @@
 - 정확 ID 강제 모드에서 같은 설명의 다른 Wi-Fi로의 fallback 차단
 - IP·MAC·게이트웨이 주소와 전체 인터페이스 GUID를 어댑터 보고서와 외부 전송에서 제외
 - 새 진단·검증 기능은 로컬 WLAN·인터페이스 정보만 사용하며 외부 요청, AI, 텔레메트리와 업로드를 추가하지 않음
-
-### Planned
-
-- `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반 비동기 WinHTTP 전송 계층
-- 목적지별 Windows route·interface metric을 개인정보 노출 없이 요약하는 로컬 경로 판정
-- Authenticode 인증서 확보 후 빌드 서명과 서명 검증
-- 실제 Windows 11·Aruba WLAN·회사 프록시 검증 결과 기반 호환성 수정
-- 절전·재연결·USB Wi-Fi 제거·VPN 전환 장시간 안정성 시험
 
 ## [0.1.0-alpha.4] - 2026-09-04
 

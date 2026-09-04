@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "New prerelease tag, for example v0.1.0-alpha.2"
+        description: "New prerelease tag, for example v0.1.0-alpha.5"
         required: true
-        default: "v0.1.0-alpha.2"
+        default: "v0.1.0-alpha.5"
         type: string
 
 permissions:
@@ -44,7 +44,7 @@ jobs:
           $tag = $env:REQUESTED_TAG.Trim()
           $pattern = '^v(?<version>(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)-[0-9A-Za-z.-]+)$'
           if ($tag -notmatch $pattern) {
-              throw "Manual bootstrap only accepts a new prerelease tag such as v0.1.0-alpha.2: $tag"
+              throw "Manual prerelease accepts a new prerelease tag such as v0.1.0-alpha.5: $tag"
           }
 
           $version = $Matches['version']
@@ -158,28 +158,41 @@ jobs:
 
           두 실행 형태 모두 .NET 런타임을 포함하므로 Python 또는 별도 .NET 설치가 필요하지 않습니다. 관리자 권한도 요구하지 않습니다.
 
-          ### 포함 기능
+          ### 이번 릴리스의 주요 변경
+
+          - 브라우저 관찰 시작 시 물리 Wi-Fi 카운터 ID 고정
+          - 후속 샘플에서 같은 설명의 다른 Wi-Fi 또는 다른 활성 NIC로 자동 전환 차단
+          - 같은 물리 NIC의 BSSID 변경은 로밍으로 유지
+          - 물리 NIC 변경, 고정 NIC 사용 불가, 카운터 공급자 ID 충돌을 각각 AdapterChanged, AdapterUnavailable, CounterProviderMismatch로 구분
+          - 다중 Wi-Fi·유선·VPN·Wi-Fi Direct·Hyper-V·VMware·WSL 등 로컬 어댑터 진단
+          - Native WLAN identity와 로컬 Wi-Fi ID 대응
+          - Bluetooth PAN과 기업 VPN·터널 분류 보강
+          - 어댑터·인터페이스 환경의 로컬 JSON·CSV·단일 HTML 보고서
+          - 브라우저 ObservationSmoke를 기본 Windows CI 필수 단계에 추가
+
+          ### 기존 주요 기능
 
           - Native WLAN 상태 수집
           - Windows 고정 프록시·PAC·WPAD URL별 경로 판정
           - HTTP 407 Negotiate/NTLM 통합 인증
           - 내부 DIRECT 및 외부 프록시 경유 HEAD/GET 다운로드 측정
-          - 엄격한 로컬 승인 대상 및 리다이렉트 호스트 정책
-          - 프로그램 자체 외부 요청이 없는 브라우저 다운로드 관찰
+          - 엄격한 로컬·관리자 승인 대상 및 리다이렉트 정책
           - 예열 제외 반복 측정 중앙값·편차·캐시 기반 신뢰도
-          - 일반 및 반복 측정용 로컬 JSON·CSV·단일 HTML 보고서와 SHA-256
+          - 일반·반복·인터페이스·어댑터용 로컬 보고서와 SHA-256
 
           ### 자동 검증
 
-          전체 Release 빌드, 모든 합성 smoke test, 저장소·네트워크 경계 감사, Portable ZIP·single-file 패키지 구조, 금지 파일, 경로 순회, PE 버전과 SHA-256 재계산을 확인했습니다.
+          전체 Release 빌드, Core SelfTest, Windows WLAN API, 프록시 인증, 다운로드 측정, 브라우저 관찰, 로컬 보고서, 저장소·네트워크 경계 감사와 Portable ZIP·single-file 패키지 구조를 확인했습니다. 자동 HTTP 시험은 127.0.0.1 합성 서버·프록시만 사용하며 실제 외부 사이트나 회사 프록시에 접속하지 않습니다.
 
-          ### 취소 동작
+          ### 다운로드 측정 취소 한계
 
-          현재 전송 계층은 동기 WinHTTP입니다. 요청 사이·반복 사이·대상 사이 취소는 반영되지만, 이미 블로킹된 현재 WinHTTP 호출은 제한 시간이 끝난 뒤 취소 상태가 반영될 수 있습니다.
+          현재 다운로드 전송 계층은 동기 WinHTTP입니다. 요청 사이·반복 사이·대상 사이 취소는 반영되지만, 이미 블로킹된 현재 WinHTTP 호출은 제한 시간이 끝난 뒤 취소 상태가 반영될 수 있습니다. 동기 요청 핸들을 다른 스레드에서 강제로 닫지 않습니다.
+
+          브라우저 관찰은 외부 요청을 만들지 않으며 사용자 취소와 인터페이스 전용 종료 상태를 즉시 구분합니다.
 
           ### 실제 환경 검증
 
-          실제 Windows 11 WLAN, 회사 고정 프록시·PAC·WPAD, Negotiate/NTLM, 승인된 내부·외부 URL과 GPO·EDR 동작은 사용자가 docs/RELEASE_VALIDATION.md에 따라 확인해야 합니다.
+          실제 Windows 11·Aruba WLAN, 내장 Wi-Fi와 USB Wi-Fi, 회사 VPN·가상 NIC, PAC/WPAD, Negotiate/NTLM 407, TLS 검사, 승인 내부·외부 URL과 GPO·EDR 동작은 docs/RELEASE_VALIDATION.md에 따라 확인해야 합니다.
 
           ### 서명 안내
 
@@ -187,7 +200,7 @@ jobs:
 
           ### 데이터 경계
 
-          AI·텔레메트리·자동 업데이트·결과 업로드가 없습니다. 외부 측정은 사용자가 명시적으로 실행한 HEAD/GET만 사용합니다.
+          AI·텔레메트리·자동 업데이트·결과 업로드가 없습니다. 외부 측정은 사용자가 명시적으로 실행한 HEAD/GET만 사용합니다. IP·MAC·게이트웨이 주소와 전체 인터페이스 GUID는 어댑터 구조화 보고서에 포함하지 않습니다.
           "@
 
           $notesPath = Join-Path $env:RUNNER_TEMP 'manual-prerelease-notes.md'

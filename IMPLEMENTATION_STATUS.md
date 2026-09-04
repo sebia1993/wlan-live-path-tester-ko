@@ -7,12 +7,13 @@
 | 항목 | 현재 상태 |
 |---|---|
 | 실제 공개 최신 릴리스 | `v0.1.0-alpha.4` |
-| 공개 릴리스 자산 | Portable ZIP, single-file EXE, SHA256SUMS, THIRD_PARTY_NOTICES |
-| 다음 후보 | `v0.1.0-alpha.5` |
-| 현재 개발 PR | 브라우저 관찰 물리 Wi-Fi 카운터 고정 및 기준선 빌드 복구 |
+| 다음 검증 후보 | `v0.1.0-alpha.5` |
+| alpha.5 소스 상태 | PR #38 병합 및 `main` Windows CI 성공 |
+| alpha.5 배포 상태 | 릴리스 준비 PR의 전체 CI·패키지 검사 후 발행 예정 |
+| 공개 릴리스 자산 정책 | Portable ZIP, single-file EXE, SHA256SUMS, THIRD_PARTY_NOTICES 정확히 4개 |
 | 코드 서명 | 미적용 · SHA-256과 GitHub Release 출처로 확인 |
 
-`v0.1.0-alpha.5` 이상은 실제 GitHub Release가 게시되고 자산 검증이 끝나기 전에는 공개 버전으로 간주하지 않습니다.
+`v0.1.0-alpha.5`는 GitHub Release가 실제로 게시되고 네 자산과 SHA-256을 확인하기 전까지 공개 최신 버전으로 표기하지 않습니다.
 
 ## 전체 기능 상태
 
@@ -70,6 +71,7 @@ Native WLAN 연결
 - Native WLAN API 및 서비스·권한 오류 경계
 - WLAN identity와 로컬 `NetworkInterface` 대응
 - 물리 Wi-Fi·VPN·가상 NIC 분류와 다중 후보 모호성
+- Bluetooth PAN과 기업 VPN·터널 식별 회귀
 - 수동 프록시·PAC·WPAD와 407 인증 상태 머신
 - 내부 DIRECT·합성 외부 PROXY HEAD/GET 측정
 - 수신량 상한, 다중 스트림, 리다이렉트, HTTP 오류와 시간초과
@@ -80,7 +82,7 @@ Native WLAN 연결
 - 구조화 종료 상태의 보고서 매핑
 - 일반·반복·인터페이스·어댑터 보고서의 마스킹, CSV 수식 방지, HTML CSP와 SHA-256
 - 저장소·네트워크 통신 경계 감사
-- Portable ZIP·single-file EXE, PE 헤더, 금지 파일과 경로 순회 검사
+- Portable ZIP·single-file EXE, PE 헤더, 금지 파일, 필수 문서와 경로 순회 검사
 
 자동 HTTP 시험은 `127.0.0.1` 합성 서버와 합성 프록시만 사용합니다. GitHub Actions는 실제 외부 사이트, 회사 프록시, PAC/WPAD 또는 사내 서버에 접속하지 않습니다.
 
@@ -107,13 +109,13 @@ Native WLAN 연결
 
 ### P0
 
-1. **현재 PR 전체 CI 통과와 병합**
-   - 기준선 Release 빌드 실패를 만든 누락 ID 유틸리티와 중복 App 감시 파일 정리
-   - Windows CI, ObservationSmoke, Local Report CI와 Release Package CI 통과
-2. **검증된 `v0.1.0-alpha.5` 발행**
-   - 병합된 `main`에서 새 태그 생성
-   - 네 자산 게시 및 SHA-256 재확인
-   - 실제 Release 존재를 확인한 뒤에만 공개 버전으로 표기
+1. **alpha.5 릴리스 준비 PR 전체 검증과 병합**
+   - Windows CI·ObservationSmoke·Local Report CI·Release Package CI
+   - Portable ZIP 필수 운영 문서와 네 자산 정책 검증
+2. **실제 `v0.1.0-alpha.5` 발행 및 재검증**
+   - 병합된 `main`에서 태그와 Release 생성
+   - 네 자산 이름·크기·prerelease 상태 확인
+   - `SHA256SUMS.txt`와 게시 자산 해시 재확인
 
 ### P1
 
