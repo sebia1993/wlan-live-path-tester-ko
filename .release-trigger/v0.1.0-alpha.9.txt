@@ -1,0 +1,1 @@
+Trigger the verified v0.1.0-alpha.9 prerelease workflow after strict physical Wi-Fi counter binding, structured observation reports, suspend/resume protection, and sample timing continuity validation.
