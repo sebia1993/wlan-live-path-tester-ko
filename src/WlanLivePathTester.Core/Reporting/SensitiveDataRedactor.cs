@@ -22,6 +22,7 @@ public static partial class SensitiveDataRedactor
         string redacted = value;
         redacted = WindowsUserPathRegex().Replace(redacted, @"C:\Users\[사용자]");
         redacted = UrlRegex().Replace(redacted, match => RedactUrl(match.Value));
+        redacted = GuidRegex().Replace(redacted, "[GUID 마스킹됨]");
         redacted = MacAddressRegex().Replace(redacted, "[MAC 마스킹됨]");
         redacted = Ipv4Regex().Replace(redacted, "[IP 마스킹됨]");
         redacted = Ipv6CandidateRegex().Replace(
@@ -92,6 +93,9 @@ public static partial class SensitiveDataRedactor
 
     [GeneratedRegex("""(?i)https?://[^\s"'<>]+""")]
     private static partial Regex UrlRegex();
+
+    [GeneratedRegex(@"(?i)(?<![0-9A-F])\{?[0-9A-F]{8}-(?:[0-9A-F]{4}-){3}[0-9A-F]{12}\}?(?![0-9A-F])")]
+    private static partial Regex GuidRegex();
 
     [GeneratedRegex(@"(?i)(?<![0-9A-F])(?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2}(?![0-9A-F])")]
     private static partial Regex MacAddressRegex();
