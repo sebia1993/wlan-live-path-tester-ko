@@ -4,8 +4,6 @@ namespace WlanLivePathTester.Windows.Interop;
 
 internal sealed class SafeWinHttpHandle : SafeHandleZeroOrMinusOneIsInvalid
 {
-    private int _closeInitiated;
-
     private SafeWinHttpHandle()
         : base(ownsHandle: true)
     {
@@ -21,29 +19,13 @@ internal sealed class SafeWinHttpHandle : SafeHandleZeroOrMinusOneIsInvalid
 
     internal void CancelPendingOperation()
     {
-        if (Interlocked.Exchange(ref _closeInitiated, 1) != 0)
-        {
-            return;
-        }
-
-        nint rawHandle = handle;
-        if (rawHandle == nint.Zero || rawHandle == new nint(-1))
-        {
-            SetHandleAsInvalid();
-            return;
-        }
-
-        SetHandleAsInvalid();
-        _ = WinHttpNative.WinHttpCloseHandle(rawHandle);
+        // This project currently opens WinHTTP in synchronous mode. Microsoft
+        // requires a synchronous request handle to remain open while another
+        // thread is blocked inside a WinHTTP function that uses it. Cancellation
+        // is therefore cooperative between calls until the transport is moved
+        // to WINHTTP_FLAG_ASYNC and completion callbacks.
     }
 
-    protected override bool ReleaseHandle()
-    {
-        if (Interlocked.Exchange(ref _closeInitiated, 1) != 0)
-        {
-            return true;
-        }
-
-        return WinHttpNative.WinHttpCloseHandle(handle);
-    }
+    protected override bool ReleaseHandle() =>
+        WinHttpNative.WinHttpCloseHandle(handle);
 }
