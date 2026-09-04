@@ -8,18 +8,40 @@ namespace WlanLivePathTester.Windows.Observation;
 [SupportedOSPlatform("windows")]
 public sealed class BrowserObservationRunner
 {
+    private readonly IBrowserObservationRuntime _runtime;
+
+    public BrowserObservationRunner()
+        : this(WindowsBrowserObservationRuntime.Instance)
+    {
+    }
+
+    public BrowserObservationRunner(
+        IBrowserObservationRuntime runtime)
+    {
+        _runtime = runtime
+            ?? throw new ArgumentNullException(nameof(runtime));
+    }
+
     public Task<BrowserObservationResult> RunAsync(
         BrowserObservationOptions options,
         IProgress<BrowserObservationProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (!_runtime.RequiresWorkerThread)
+        {
+            return RunCoreAsync(
+                options,
+                progress,
+                cancellationToken);
+        }
+
         return Task.Run(
             () => RunCoreAsync(options, progress, cancellationToken),
             CancellationToken.None);
     }
 
-    private static async Task<BrowserObservationResult> RunCoreAsync(
+    private async Task<BrowserObservationResult> RunCoreAsync(
         BrowserObservationOptions options,
         IProgress<BrowserObservationProgress>? progress,
         CancellationToken cancellationToken)
@@ -35,7 +57,7 @@ public sealed class BrowserObservationRunner
                 BrowserObservationTerminationReason.InvalidOptions);
         }
 
-        if (!OperatingSystem.IsWindows())
+        if (!_runtime.IsSupportedPlatform)
         {
             return new BrowserObservationResult(
                 BrowserObservationStatus.UnsupportedPlatform,
@@ -53,9 +75,9 @@ public sealed class BrowserObservationRunner
             null,
             "현재 WLAN 연결과 정확히 대응되는 물리 Wi-Fi 카운터를 확인하고 있습니다."));
 
-        WlanReadResult initialWlanRead = NativeWlanReader.ReadCurrent();
+        WlanReadResult initialWlanRead = _runtime.ReadWlan();
         WlanInterfaceIdentityReadResult identityRead =
-            WlanInterfaceIdentityReader.ReadCurrent();
+            _runtime.ReadWlanIdentity();
         WlanSnapshot? initialWlan =
             WlanInterfaceIdentityReader.AttachIdentity(
                 initialWlanRead.FirstConnectedInterface,
@@ -76,7 +98,7 @@ public sealed class BrowserObservationRunner
                     .PreferExactIdentityThenDescription
                 : InterfaceCounterSelectionMode.RequireExactInterfaceId;
         InterfaceCounterReadResult initialCounterRead =
-            WindowsInterfaceCounterReader.ReadCurrent(
+            _runtime.ReadCounter(
                 initialWlan.InterfaceId,
                 initialWlan.InterfaceDescription,
                 initialSelectionMode);
@@ -142,12 +164,14 @@ public sealed class BrowserObservationRunner
             for (int index = 0; index < totalSampleCount; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await Task.Delay(
-                    options.SampleIntervalMilliseconds,
-                    cancellationToken).ConfigureAwait(false);
+                await _runtime.DelayAsync(
+                        TimeSpan.FromMilliseconds(
+                            options.SampleIntervalMilliseconds),
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
                 WlanReadResult currentWlanRead =
-                    NativeWlanReader.ReadCurrent();
+                    _runtime.ReadWlan();
                 WlanSnapshot? currentWlan =
                     WlanInterfaceIdentityReader.AttachIdentity(
                         currentWlanRead.FirstConnectedInterface,
@@ -157,7 +181,7 @@ public sealed class BrowserObservationRunner
                     && string.IsNullOrWhiteSpace(currentWlan.InterfaceId))
                 {
                     WlanInterfaceIdentityReadResult refreshedIdentity =
-                        WlanInterfaceIdentityReader.ReadCurrent();
+                        _runtime.ReadWlanIdentity();
                     if (refreshedIdentity.IsSuccess)
                     {
                         identityRead = refreshedIdentity;
@@ -185,7 +209,7 @@ public sealed class BrowserObservationRunner
                 }
 
                 InterfaceCounterReadResult currentCounterRead =
-                    WindowsInterfaceCounterReader.ReadCurrent(
+                    _runtime.ReadCounter(
                         binding.CounterInterfaceId,
                         preferredInterfaceDescription: null,
                         InterfaceCounterSelectionMode
@@ -289,16 +313,17 @@ public sealed class BrowserObservationRunner
         }
         catch (OperationCanceledException)
         {
+            DateTimeOffset canceledAt = _runtime.UtcNow;
             BrowserObservationSummary? canceledSummary =
                 samples.Count == 0
                     ? null
                     : BrowserObservationCalculator.Summarize(
                         startedAt,
-                        DateTimeOffset.UtcNow,
+                        canceledAt,
                         samples);
             progress?.Report(new BrowserObservationProgress(
                 BrowserObservationPhase.Canceled,
-                DateTimeOffset.UtcNow - startedAt,
+                canceledAt - startedAt,
                 TimeSpan.Zero,
                 samples.Count == 0 ? null : samples[^1],
                 "사용자 요청으로 브라우저 관찰을 중단했습니다."));
@@ -311,16 +336,17 @@ public sealed class BrowserObservationRunner
         }
         catch (Exception exception)
         {
+            DateTimeOffset failedAt = _runtime.UtcNow;
             BrowserObservationSummary? failedSummary =
                 samples.Count == 0
                     ? null
                     : BrowserObservationCalculator.Summarize(
                         startedAt,
-                        DateTimeOffset.UtcNow,
+                        failedAt,
                         samples);
             progress?.Report(new BrowserObservationProgress(
                 BrowserObservationPhase.Failed,
-                DateTimeOffset.UtcNow - startedAt,
+                failedAt - startedAt,
                 TimeSpan.Zero,
                 samples.Count == 0 ? null : samples[^1],
                 $"관찰 중 오류가 발생했습니다: {exception.Message}"));
@@ -334,7 +360,7 @@ public sealed class BrowserObservationRunner
                 BrowserObservationTerminationReason.Failed);
         }
 
-        DateTimeOffset completedAt = DateTimeOffset.UtcNow;
+        DateTimeOffset completedAt = _runtime.UtcNow;
         BrowserObservationSummary summary =
             BrowserObservationCalculator.Summarize(
                 startedAt,
@@ -358,7 +384,7 @@ public sealed class BrowserObservationRunner
             BrowserObservationTerminationReason.Completed);
     }
 
-    private static BrowserObservationResult CreateInterruptedResult(
+    private BrowserObservationResult CreateInterruptedResult(
         BrowserObservationStatus status,
         DateTimeOffset startedAt,
         IReadOnlyList<BrowserObservationSample> samples,
@@ -366,7 +392,7 @@ public sealed class BrowserObservationRunner
         string message,
         IProgress<BrowserObservationProgress>? progress)
     {
-        DateTimeOffset completedAt = DateTimeOffset.UtcNow;
+        DateTimeOffset completedAt = _runtime.UtcNow;
         BrowserObservationSummary? summary = samples.Count == 0
             ? null
             : BrowserObservationCalculator.Summarize(
