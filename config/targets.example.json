@@ -10,14 +10,18 @@
     {
       "name": "내부 테스트 예시",
       "url": "http://192.0.2.10/network-test/100mb.bin",
-      "requireDirect": true
+      "requireDirect": true,
+      "allowedRedirectHosts": []
     }
   ],
   "externalTargets": [
     {
       "name": "외부 테스트 예시",
       "url": "https://example.invalid/network-test/100mb.bin",
-      "requireProxy": true
+      "requireProxy": true,
+      "allowedRedirectHosts": [
+        "cdn.example.invalid"
+      ]
     }
   ]
 }
