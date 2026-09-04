@@ -11,6 +11,7 @@ public enum InterfaceCounterReadStatus
     InterfaceNotOperational,
     InterfaceAmbiguous,
     StatisticsUnavailable,
+    CounterProviderMismatch,
     Failed
 }
 
@@ -36,6 +37,9 @@ public enum BrowserObservationStatus
     Success,
     PartialSuccess,
     Canceled,
+    AdapterChanged,
+    AdapterUnavailable,
+    CounterProviderMismatch,
     UnsupportedPlatform,
     NoWirelessConnection,
     InterfaceUnavailable,
