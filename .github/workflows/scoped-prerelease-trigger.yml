@@ -1,30 +1,120 @@
 name: Scoped Prerelease Trigger
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/scoped-prerelease-trigger.yml"
   push:
     branches:
       - "release-trigger/v*-dispatch"
 
 permissions:
-  actions: write
   contents: read
 
 concurrency:
-  group: scoped-prerelease-trigger-${{ github.ref_name }}
+  group: scoped-prerelease-trigger-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  dispatch:
-    name: validate-and-dispatch-manual-prerelease
+  validate:
+    name: validate-trigger-parser
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.actual.outputs.tag }}
+      version: ${{ steps.actual.outputs.version }}
 
     steps:
-      - name: Validate owner and trigger branch
-        id: validate
+      - name: Test strict branch parser
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          function Resolve-PrereleaseTrigger {
+              param([Parameter(Mandatory = $true)][string]$Branch)
+
+              $prefix = 'release-trigger/'
+              $suffix = '-dispatch'
+              if (-not $Branch.StartsWith($prefix, [StringComparison]::Ordinal)
+                  -or -not $Branch.EndsWith($suffix, [StringComparison]::Ordinal)) {
+                  throw "Invalid release trigger branch boundary: $Branch"
+              }
+
+              $tagLength = $Branch.Length - $prefix.Length - $suffix.Length
+              if ($tagLength -le 0) {
+                  throw "Release tag is empty in trigger branch: $Branch"
+              }
+
+              $tag = $Branch.Substring($prefix.Length, $tagLength)
+              $pattern = '^v(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))$'
+              $match = [regex]::Match(
+                  $tag,
+                  $pattern,
+                  [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+              if (-not $match.Success) {
+                  throw "Trigger branch does not contain a valid prerelease SemVer tag: $Branch"
+              }
+
+              $version = $match.Groups['version'].Value
+              $prerelease = $version.Substring($version.IndexOf('-') + 1)
+              foreach ($identifier in $prerelease.Split('.')) {
+                  if ($identifier -match '^\d+$'
+                      -and $identifier.Length -gt 1
+                      -and $identifier.StartsWith('0', [StringComparison]::Ordinal)) {
+                      throw "Numeric prerelease identifiers cannot contain leading zeroes: $Branch"
+                  }
+              }
+
+              [pscustomobject]@{
+                  Tag = $tag
+                  Version = $version
+              }
+          }
+
+          $validCases = @(
+              @{ Branch = 'release-trigger/v0.1.0-alpha.10-dispatch'; Tag = 'v0.1.0-alpha.10'; Version = '0.1.0-alpha.10' },
+              @{ Branch = 'release-trigger/v1.2.3-rc.1-dispatch'; Tag = 'v1.2.3-rc.1'; Version = '1.2.3-rc.1' },
+              @{ Branch = 'release-trigger/v2.0.0-preview-x64.0-dispatch'; Tag = 'v2.0.0-preview-x64.0'; Version = '2.0.0-preview-x64.0' }
+          )
+          foreach ($case in $validCases) {
+              $resolved = Resolve-PrereleaseTrigger -Branch $case.Branch
+              if ($resolved.Tag -ne $case.Tag -or $resolved.Version -ne $case.Version) {
+                  throw "Unexpected trigger parse result for $($case.Branch): Tag=$($resolved.Tag) Version=$($resolved.Version)"
+              }
+          }
+
+          $invalidCases = @(
+              'release-trigger/v0.1.0-alpha.10',
+              'release-trigger/v0.1.0-dispatch',
+              'release-trigger/v0.1.0-alpha.01-dispatch',
+              'release-trigger/v0.1.0-alpha..1-dispatch',
+              'release-trigger/v0.1.0-alpha.10-dispatch-extra',
+              'release-trigger/../../v0.1.0-alpha.10-dispatch'
+          )
+          foreach ($branch in $invalidCases) {
+              $failed = $false
+              try {
+                  $null = Resolve-PrereleaseTrigger -Branch $branch
+              }
+              catch {
+                  $failed = $true
+              }
+
+              if (-not $failed) {
+                  throw "Invalid trigger branch was accepted: $branch"
+              }
+          }
+
+          Write-Host 'Scoped prerelease trigger parser tests passed.' -ForegroundColor Green
+
+      - name: Resolve actual push trigger
+        id: actual
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
 
           if (-not $env:GITHUB_ACTOR.Equals(
               $env:GITHUB_REPOSITORY_OWNER,
@@ -33,24 +123,63 @@ jobs:
           }
 
           $branch = $env:GITHUB_REF_NAME.Trim()
-          $pattern = '^release-trigger/(?<tag>v(?<version>(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-[0-9A-Za-z.-]+))-dispatch$'
-          if ($branch -notmatch $pattern) {
-              throw "Invalid release trigger branch: $branch"
+          $prefix = 'release-trigger/'
+          $suffix = '-dispatch'
+          if (-not $branch.StartsWith($prefix, [StringComparison]::Ordinal)
+              -or -not $branch.EndsWith($suffix, [StringComparison]::Ordinal)) {
+              throw "Invalid release trigger branch boundary: $branch"
           }
 
-          $tag = $Matches['tag']
-          $version = $Matches['version']
+          $tagLength = $branch.Length - $prefix.Length - $suffix.Length
+          if ($tagLength -le 0) {
+              throw "Release tag is empty in trigger branch: $branch"
+          }
+
+          $tag = $branch.Substring($prefix.Length, $tagLength)
+          $pattern = '^v(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))$'
+          $match = [regex]::Match(
+              $tag,
+              $pattern,
+              [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+          if (-not $match.Success) {
+              throw "Trigger branch does not contain a valid prerelease SemVer tag: $branch"
+          }
+
+          $version = $match.Groups['version'].Value
+          $prerelease = $version.Substring($version.IndexOf('-') + 1)
+          foreach ($identifier in $prerelease.Split('.')) {
+              if ($identifier -match '^\d+$'
+                  -and $identifier.Length -gt 1
+                  -and $identifier.StartsWith('0', [StringComparison]::Ordinal)) {
+                  throw "Numeric prerelease identifiers cannot contain leading zeroes: $branch"
+              }
+          }
+
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
-          Write-Host "Validated owner-only trigger: Branch=$branch Tag=$tag Version=$version"
+          Write-Host "Validated owner-only trigger: Branch=$branch Tag=$tag Version=$version" -ForegroundColor Green
 
+  dispatch:
+    name: dispatch-verified-manual-prerelease
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
       - name: Dispatch verified manual prerelease workflow on main
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.validate.outputs.tag }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
         run: |
           $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) {
+              throw 'Validated release tag output is empty.'
+          }
 
           gh workflow run manual-prerelease.yml `
               --repo $env:GITHUB_REPOSITORY `
