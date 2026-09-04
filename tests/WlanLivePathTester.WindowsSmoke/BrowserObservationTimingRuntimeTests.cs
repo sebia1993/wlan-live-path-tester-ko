@@ -34,14 +34,22 @@ internal static class BrowserObservationTimingRuntimeTests
                 ConnectedWlan(Start),
                 ConnectedWlan(Start.AddMilliseconds(500)),
                 ConnectedWlan(Start.AddSeconds(1)),
-                ConnectedWlan(Start.AddMilliseconds(6001))
+                ConnectedWlan(Start.AddMilliseconds(1500)),
+                ConnectedWlan(Start.AddSeconds(2)),
+                ConnectedWlan(Start.AddMilliseconds(2500)),
+                ConnectedWlan(Start.AddSeconds(3)),
+                ConnectedWlan(Start.AddMilliseconds(8001))
             ],
             counterResults:
             [
                 Counter(Start, 1_000_000),
                 Counter(Start.AddMilliseconds(500), 1_062_500),
                 Counter(Start.AddSeconds(1), 1_125_000),
-                Counter(Start.AddMilliseconds(6001), 51_125_000)
+                Counter(Start.AddMilliseconds(1500), 1_187_500),
+                Counter(Start.AddSeconds(2), 1_250_000),
+                Counter(Start.AddMilliseconds(2500), 7_562_500),
+                Counter(Start.AddSeconds(3), 13_875_000),
+                Counter(Start.AddMilliseconds(8001), 63_875_000)
             ]);
 
         BrowserObservationResult result = RunObservation(runtime);
@@ -58,17 +66,23 @@ internal static class BrowserObservationTimingRuntimeTests
 
         BrowserObservationSummary summary = result.Summary
             ?? throw new InvalidOperationException(
-                "유효 샘플 두 개는 부분 요약으로 보존돼야 합니다.");
-        Ensure(summary.Samples.Count == 2,
-            "비정상적인 세 번째 카운터 구간은 샘플에 포함하면 안 됩니다.");
+                "기준 샘플 네 개와 활성 샘플 두 개는 부분 요약으로 보존돼야 합니다.");
+        Ensure(summary.Samples.Count == 6,
+            "비정상적인 일곱 번째 카운터 구간은 샘플에 포함하면 안 됩니다.");
+        Ensure(summary.ActiveSampleCount == 2,
+            "시간 단절 전 활성 처리량 샘플 두 개만 통계에 포함해야 합니다.");
         Ensure(summary.Samples.All(sample =>
-                sample.Timestamp <= Start.AddSeconds(1)),
+                sample.Timestamp <= Start.AddSeconds(3)),
             "시간 단절 이후의 카운터 타임스탬프가 보고서 샘플에 남으면 안 됩니다.");
-        Ensure(summary.CompletedAt == Start.AddSeconds(1),
+        Ensure(summary.CompletedAt == Start.AddSeconds(3),
             "부분 요약 종료 시각은 마지막 유효 카운터 시각이어야 합니다.");
         Ensure(summary.ObservedDuration == TimeSpan.FromSeconds(1),
-            "비정상 5초 구간을 관찰 시간에 포함하면 안 됩니다.");
-        Ensure(runtime.CounterReadCount == 4,
+            "활성 샘플 두 개의 1초만 관찰 시간에 포함하고 비정상 5.001초 구간은 제외해야 합니다.");
+        Ensure(summary.TotalReceiveBytes == 12_625_000,
+            "비정상 구간의 50MB 델타를 총 수신량에 포함하면 안 됩니다.");
+        Ensure(summary.AverageAdjustedReceiveMbps is > 99 and < 101,
+            "시간 단절 전 정상 활성 샘플의 조정 평균은 약 100 Mbps여야 합니다.");
+        Ensure(runtime.CounterReadCount == 8,
             "단절을 판정하기 위한 현재 카운터까지 읽고 즉시 종료해야 합니다.");
 
         ReportObservationSection mapped =
