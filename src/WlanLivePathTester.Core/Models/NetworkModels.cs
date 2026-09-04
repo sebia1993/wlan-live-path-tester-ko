@@ -35,7 +35,8 @@ public sealed record MeasurementTargetDefinition(
     long MaxBytes,
     int TimeoutSeconds,
     int Streams,
-    int MaxRedirects);
+    int MaxRedirects,
+    IReadOnlyList<string>? AllowedRedirectHosts = null);
 
 public sealed record WlanSnapshot(
     DateTimeOffset Timestamp,
