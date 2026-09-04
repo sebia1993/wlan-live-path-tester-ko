@@ -1,0 +1,63 @@
+<Project>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\STRUCTURED_OBSERVATION_TERMINATION.md"
+          Link="docs\STRUCTURED_OBSERVATION_TERMINATION.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\UNIFIED_OBSERVATION_TERMINATION_REPORTING.md"
+          Link="docs\UNIFIED_OBSERVATION_TERMINATION_REPORTING.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_TERMINATION_FINDINGS.md"
+          Link="docs\OBSERVATION_TERMINATION_FINDINGS.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\INJECTABLE_OBSERVATION_RUNTIME.md"
+          Link="docs\INJECTABLE_OBSERVATION_RUNTIME.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_TIMING_CONTINUITY.md"
+          Link="docs\OBSERVATION_TIMING_CONTINUITY.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_REPORT_PIPELINE_E2E.md"
+          Link="docs\OBSERVATION_REPORT_PIPELINE_E2E.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\BROWSER_OBSERVATION_REPORT.md"
+          Link="docs\BROWSER_OBSERVATION_REPORT.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_COUNTER_RESET_FINDING.md"
+          Link="docs\OBSERVATION_COUNTER_RESET_FINDING.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_POWER_TRANSITIONS.md"
+          Link="docs\OBSERVATION_POWER_TRANSITIONS.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_COMBINED_DISRUPTIONS.md"
+          Link="docs\OBSERVATION_COMBINED_DISRUPTIONS.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\WLAN_IDENTITY_CONTINUITY.md"
+          Link="docs\WLAN_IDENTITY_CONTINUITY.md"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="ValidateObservationGuidesInPublish"
+          AfterTargets="Publish">
+    <Error Condition="!Exists('$(PublishDir)docs\STRUCTURED_OBSERVATION_TERMINATION.md')"
+           Text="Published output is missing STRUCTURED_OBSERVATION_TERMINATION.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\UNIFIED_OBSERVATION_TERMINATION_REPORTING.md')"
+           Text="Published output is missing UNIFIED_OBSERVATION_TERMINATION_REPORTING.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_TERMINATION_FINDINGS.md')"
+           Text="Published output is missing OBSERVATION_TERMINATION_FINDINGS.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\INJECTABLE_OBSERVATION_RUNTIME.md')"
+           Text="Published output is missing INJECTABLE_OBSERVATION_RUNTIME.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_TIMING_CONTINUITY.md')"
+           Text="Published output is missing OBSERVATION_TIMING_CONTINUITY.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_REPORT_PIPELINE_E2E.md')"
+           Text="Published output is missing OBSERVATION_REPORT_PIPELINE_E2E.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\BROWSER_OBSERVATION_REPORT.md')"
+           Text="Published output is missing BROWSER_OBSERVATION_REPORT.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_COUNTER_RESET_FINDING.md')"
+           Text="Published output is missing OBSERVATION_COUNTER_RESET_FINDING.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_POWER_TRANSITIONS.md')"
+           Text="Published output is missing OBSERVATION_POWER_TRANSITIONS.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_COMBINED_DISRUPTIONS.md')"
+           Text="Published output is missing OBSERVATION_COMBINED_DISRUPTIONS.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\WLAN_IDENTITY_CONTINUITY.md')"
+           Text="Published output is missing WLAN_IDENTITY_CONTINUITY.md." />
+  </Target>
+</Project>

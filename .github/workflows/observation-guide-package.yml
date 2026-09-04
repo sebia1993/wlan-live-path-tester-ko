@@ -1,0 +1,89 @@
+name: Observation Guide Package CI
+
+on:
+  pull_request:
+    paths:
+      - "src/WlanLivePathTester.App/Directory.Build.targets"
+      - "docs/**"
+      - "scripts/build-release.ps1"
+      - "scripts/test-observation-guides-package.ps1"
+      - ".github/workflows/observation-guide-package.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/WlanLivePathTester.App/Directory.Build.targets"
+      - "docs/**"
+      - "scripts/build-release.ps1"
+      - "scripts/test-observation-guides-package.ps1"
+      - ".github/workflows/observation-guide-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observation-guide-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-observation-guides:
+    name: build-and-inspect-portable-zip
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build release assets
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\build-release.ps1
+          -Version 0.1.0-ci.observation-guides
+          -OutputRoot .\artifacts\observation-guide-release
+
+      - name: Validate observation guides in Portable ZIP
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\test-observation-guides-package.ps1
+          -PortableZip .\artifacts\observation-guide-release\WlanLivePathTester-win-x64-portable.zip
+
+      - name: Upload package manifest on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $zip = '.\artifacts\observation-guide-release\WlanLivePathTester-win-x64-portable.zip'
+          if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) {
+              Write-Host 'Portable ZIP was not created.'
+              exit 0
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead(
+              [System.IO.Path]::GetFullPath($zip))
+          try {
+              $archive.Entries |
+                  ForEach-Object { $_.FullName.Replace('\', '/') } |
+                  Sort-Object |
+                  Set-Content -LiteralPath .\observation-guide-package-entries.txt -Encoding utf8
+          }
+          finally {
+              $archive.Dispose()
+          }
+
+      - name: Upload failure manifest artifact
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: observation-guide-package-entries
+          path: observation-guide-package-entries.txt
+          if-no-files-found: ignore
+          retention-days: 3
