@@ -18,6 +18,9 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_REPORT_PIPELINE_E2E.md"
           Link="docs\OBSERVATION_REPORT_PIPELINE_E2E.md"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_REPORT_TERMINATION_MATRIX.md"
+          Link="docs\OBSERVATION_REPORT_TERMINATION_MATRIX.md"
+          CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\BROWSER_OBSERVATION_REPORT.md"
           Link="docs\BROWSER_OBSERVATION_REPORT.md"
           CopyToPublishDirectory="PreserveNewest" />
@@ -32,6 +35,9 @@
           CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\WLAN_IDENTITY_CONTINUITY.md"
           Link="docs\WLAN_IDENTITY_CONTINUITY.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\RELEASE_NOTES_v0.1.0-alpha.10.md"
+          Link="docs\RELEASE_NOTES_v0.1.0-alpha.10.md"
           CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
@@ -49,6 +55,8 @@
            Text="Published output is missing OBSERVATION_TIMING_CONTINUITY.md." />
     <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_REPORT_PIPELINE_E2E.md')"
            Text="Published output is missing OBSERVATION_REPORT_PIPELINE_E2E.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_REPORT_TERMINATION_MATRIX.md')"
+           Text="Published output is missing OBSERVATION_REPORT_TERMINATION_MATRIX.md." />
     <Error Condition="!Exists('$(PublishDir)docs\BROWSER_OBSERVATION_REPORT.md')"
            Text="Published output is missing BROWSER_OBSERVATION_REPORT.md." />
     <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_COUNTER_RESET_FINDING.md')"
@@ -59,5 +67,7 @@
            Text="Published output is missing OBSERVATION_COMBINED_DISRUPTIONS.md." />
     <Error Condition="!Exists('$(PublishDir)docs\WLAN_IDENTITY_CONTINUITY.md')"
            Text="Published output is missing WLAN_IDENTITY_CONTINUITY.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\RELEASE_NOTES_v0.1.0-alpha.10.md')"
+           Text="Published output is missing RELEASE_NOTES_v0.1.0-alpha.10.md." />
   </Target>
 </Project>
