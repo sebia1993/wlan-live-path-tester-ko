@@ -26,6 +26,11 @@ internal static class Program
             return 1;
         }
 
+        if (!CheckWlanIdentityBoundary())
+        {
+            return 1;
+        }
+
         WlanReadResult stoppedService = new(
             WlanReadStatus.NativeError,
             Array.Empty<WlanSnapshot>(),
@@ -129,6 +134,134 @@ internal static class Program
                 Console.Error.WriteLine("An adapter exposed an invalid count or link speed.");
                 return false;
             }
+
+            if (!string.IsNullOrWhiteSpace(adapter.InterfaceId)
+                && adapter.InterfaceId.Contains('\n'))
+            {
+                Console.Error.WriteLine("An adapter ID contains a line break.");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool CheckWlanIdentityBoundary()
+    {
+        WlanInterfaceIdentityReadResult native =
+            WlanInterfaceIdentityReader.ReadCurrent();
+        Console.WriteLine(
+            $"WLAN identities: success={native.IsSuccess}, interfaces={native.Interfaces.Count}");
+        Console.WriteLine(native.Message);
+
+        if (string.IsNullOrWhiteSpace(native.Message))
+        {
+            Console.Error.WriteLine("The WLAN identity reader returned an empty message.");
+            return false;
+        }
+
+        foreach (WlanInterfaceIdentity identity in native.Interfaces)
+        {
+            if (!Guid.TryParse(identity.InterfaceId, out _))
+            {
+                Console.Error.WriteLine("The WLAN identity reader returned an invalid GUID.");
+                return false;
+            }
+
+            if (identity.Description.Contains('\r')
+                || identity.Description.Contains('\n'))
+            {
+                Console.Error.WriteLine("A WLAN identity description contains a line break.");
+                return false;
+            }
+        }
+
+        const string expectedId =
+            "A1B2C3D4-E5F6-47A8-9123-1234567890AB";
+        WlanSnapshot snapshot = new(
+            Timestamp: DateTimeOffset.UnixEpoch,
+            IsConnected: true,
+            Ssid: "SYNTHETIC",
+            Bssid: "00:00:00:00:00:00",
+            RssiDbm: -55,
+            Channel: 36,
+            PhyType: "802.11ax",
+            ReceiveLinkSpeedBps: 1_200_000_000,
+            TransmitLinkSpeedBps: 1_200_000_000,
+            InterfaceDescription: "  Synthetic   Wi-Fi Adapter ",
+            InterfaceId: null);
+        WlanInterfaceIdentityReadResult synthetic = new(
+            IsSuccess: true,
+            Interfaces:
+            [
+                new WlanInterfaceIdentity(
+                    InterfaceId: expectedId.ToLowerInvariant(),
+                    Description: "Synthetic Wi-Fi Adapter",
+                    IsConnected: true)
+            ],
+            Message: "Synthetic identity list");
+
+        WlanSnapshot? attached =
+            WlanInterfaceIdentityReader.AttachIdentity(snapshot, synthetic);
+        if (!string.Equals(
+                attached?.InterfaceId,
+                expectedId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine("A unique connected WLAN identity was not attached to the snapshot.");
+            return false;
+        }
+
+        WlanSnapshot existing = snapshot with
+        {
+            InterfaceId = "B1B2C3D4-E5F6-47A8-9123-1234567890AB"
+        };
+        WlanSnapshot? unchanged =
+            WlanInterfaceIdentityReader.AttachIdentity(existing, synthetic);
+        if (unchanged?.InterfaceId != existing.InterfaceId)
+        {
+            Console.Error.WriteLine("An existing WLAN interface ID was overwritten.");
+            return false;
+        }
+
+        WlanInterfaceIdentity originalIdentity = synthetic.Interfaces[0];
+        WlanInterfaceIdentity secondIdentity = new(
+            InterfaceId: "C1B2C3D4-E5F6-47A8-9123-1234567890AB",
+            Description: originalIdentity.Description,
+            IsConnected: originalIdentity.IsConnected);
+        WlanInterfaceIdentityReadResult duplicates = synthetic with
+        {
+            Interfaces = new WlanInterfaceIdentity[]
+            {
+                originalIdentity,
+                secondIdentity
+            }
+        };
+        WlanSnapshot? duplicateResult =
+            WlanInterfaceIdentityReader.AttachIdentity(snapshot, duplicates);
+        if (!string.IsNullOrWhiteSpace(duplicateResult?.InterfaceId))
+        {
+            Console.Error.WriteLine("Duplicate WLAN identity candidates must not be selected arbitrarily.");
+            return false;
+        }
+
+        WlanInterfaceIdentity disconnectedIdentity = new(
+            InterfaceId: originalIdentity.InterfaceId,
+            Description: originalIdentity.Description,
+            IsConnected: false);
+        WlanInterfaceIdentityReadResult disconnected = synthetic with
+        {
+            Interfaces = new WlanInterfaceIdentity[]
+            {
+                disconnectedIdentity
+            }
+        };
+        WlanSnapshot? disconnectedResult =
+            WlanInterfaceIdentityReader.AttachIdentity(snapshot, disconnected);
+        if (!string.IsNullOrWhiteSpace(disconnectedResult?.InterfaceId))
+        {
+            Console.Error.WriteLine("A disconnected WLAN identity must not be attached to a connected snapshot.");
+            return false;
         }
 
         return true;

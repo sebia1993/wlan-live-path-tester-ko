@@ -70,7 +70,10 @@ public static class LocalNetworkEnvironmentReader
                 ? networkInterface.Speed
                 : null;
         }
-        catch (NetworkInformationException)
+        catch (Exception exception) when (
+            exception is NetworkInformationException
+                or PlatformNotSupportedException
+                or InvalidOperationException)
         {
             readError = "링크 속도를 읽지 못했습니다.";
         }
@@ -98,6 +101,7 @@ public static class LocalNetworkEnvironmentReader
         }
         catch (Exception exception) when (
             exception is NetworkInformationException
+                or PlatformNotSupportedException
                 or InvalidOperationException
                 or ObjectDisposedException)
         {
@@ -126,7 +130,8 @@ public static class LocalNetworkEnvironmentReader
             SupportsMulticast: networkInterface.SupportsMulticast,
             IsVirtual: classification.IsVirtual,
             IsVpn: classification.IsVpn,
-            ReadError: readError);
+            ReadError: readError,
+            InterfaceId: NormalizeInterfaceId(networkInterface.Id));
     }
 
     private static bool IsUsableGateway(IPAddress address)
@@ -156,6 +161,19 @@ public static class LocalNetworkEnvironmentReader
             OperationalStatus.Testing => NetworkAdapterOperationalState.Testing,
             _ => NetworkAdapterOperationalState.Unknown
         };
+
+    private static string? NormalizeInterfaceId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string trimmed = value.Trim().Trim('{', '}');
+        return Guid.TryParse(trimmed, out Guid parsed)
+            ? parsed.ToString("D")
+            : trimmed;
+    }
 
     private static string SafeDisplayText(
         string? value,
