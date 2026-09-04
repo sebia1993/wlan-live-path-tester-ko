@@ -2,108 +2,137 @@
 
 기준일: 2026-09-04
 
-## 전체 상태
+## 릴리스 상태
+
+| 항목 | 현재 상태 |
+|---|---|
+| 실제 공개 최신 릴리스 | `v0.1.0-alpha.4` |
+| 공개 릴리스 자산 | Portable ZIP, single-file EXE, SHA256SUMS, THIRD_PARTY_NOTICES |
+| 다음 후보 | `v0.1.0-alpha.5` |
+| 현재 개발 PR | 브라우저 관찰 물리 Wi-Fi 카운터 고정 및 기준선 빌드 복구 |
+| 코드 서명 | 미적용 · SHA-256과 GitHub Release 출처로 확인 |
+
+`v0.1.0-alpha.5` 이상은 실제 GitHub Release가 게시되고 자산 검증이 끝나기 전에는 공개 버전으로 간주하지 않습니다.
+
+## 전체 기능 상태
 
 | 영역 | 상태 | 자동 검증 | 실제 환경 검증 |
 |---|---|---|---|
-| M0 저장소·솔루션·보안 경계 | 완료 | Windows CI·감사 통과 | 불필요 |
-| M1 Native WLAN 현재 연결 수집 | 완료 | Native API smoke 통과 | 사용자 담당 |
-| M2 수동 프록시·PAC·WPAD 경로 판정 | 완료 | 합성 경로·파서 검사 통과 | 사용자 담당 |
-| M2 HTTP 407 Negotiate/NTLM | 완료 | 루프백 407 smoke 통과 | 사용자 담당 |
-| M3 내부망 DIRECT 다운로드 측정 | 완료 | 루프백 측정 통과 | 사용자 담당 |
-| M4 프록시 경유 외부 다운로드 측정 | 완료 | 합성 프록시 측정 통과 | 사용자 담당 |
-| M5 브라우저 다운로드 WLAN 관찰 | 완료 | 합성 카운터 smoke 통과 | 사용자 담당 |
-| M6 로컬 JSON·CSV·단일 HTML 보고서 | 완료 | 마스킹·CSP·주입 방지·SHA-256 통과 | 공유 전 사용자 검토 |
-| M7 win-x64 self-contained 패키지 | 완료 | Portable ZIP·single-file 검사 통과 | 사용자 실행 확인 |
-| 승인 대상·리다이렉트 강화 | 완료 | 엄격 JSON·Core 실행 경계 통과 | 로컬 설정 배포 확인 |
-| 반복 측정·대표값 | 완료 | 중앙값·편차·신뢰도 테스트 통과 | 실제 경로 반복 측정 |
-| 반복 측정 전용 보고서 | 완료 | JSON·CSV·HTML·SHA-256 smoke 통과 | 사용자 내용 확인 |
-| `v0.1.0-alpha.2` 사전 릴리스 | 준비 중 | 릴리스 후보 CI 후 발행 | 자산 다운로드 확인 |
+| 저장소·솔루션·보안 경계 | 완료 | Windows CI·감사 | 불필요 |
+| Native WLAN 현재 연결 수집 | 완료 | Native API Smoke | 사용자 담당 |
+| 수동 프록시·PAC·WPAD 경로 판정 | 완료 | 합성 경로·파서 | 사용자 담당 |
+| HTTP 407 Negotiate/NTLM | 완료 | 루프백 407 Smoke | 사용자 담당 |
+| 내부망 DIRECT 다운로드 | 완료 | 루프백 측정 | 사용자 담당 |
+| 프록시 경유 외부 다운로드 | 완료 | 합성 프록시 | 사용자 담당 |
+| 승인 대상·리다이렉트 정책 | 완료 | 엄격 JSON·Core 경계 | 로컬 설정 배포 확인 |
+| 관리자 ProgramData 강제 정책 | 완료 | fail-closed 정책 시험 | ACL·GPO 확인 |
+| 반복 측정·대표값 | 완료 | 중앙값·편차·신뢰도 | 실제 경로 반복 측정 |
+| 브라우저 다운로드 관찰 | 완료 | 카운터·선택·ID 고정 Smoke | 사용자 담당 |
+| 물리 Wi-Fi·VPN·가상 NIC 진단 | 완료 | 분류·모호성 시험 | 사용자 담당 |
+| WLAN과 로컬 NIC 대응 | 완료 | GUID·설명 대응 시험 | 사용자 담당 |
+| 일반·반복·인터페이스·어댑터 보고서 | 완료 | JSON·CSV·HTML·SHA-256 | 공유 전 사용자 검토 |
+| win-x64 self-contained 패키지 | 완료 | ZIP·single-file 검사 | 사용자 실행 확인 |
 
-## 최근 구현
+## 브라우저 관찰의 현재 경계
 
-### 승인 측정 대상과 리다이렉트 경계
+관찰 시작 시 선택된 물리 Wi-Fi의 카운터 ID를 고정합니다.
 
-- 로컬 `targets.local.json`에서 내부 1개와 외부 1~4개의 승인 대상 및 실행 제한을 불러옵니다.
-- 내부 대상은 기본 DIRECT, 외부 대상은 기본 PROXY를 요구합니다.
-- 알 수 없는 JSON 속성, 주석과 trailing comma를 거부합니다.
-- 승인 목록 사용 중 미등록 URL과 변경된 수신량·제한 시간·스트림·리다이렉트 제한을 Core 검증 단계에서 차단합니다.
-- 리다이렉트는 최초 호스트 또는 `allowedRedirectHosts`에 정확히 등록한 호스트로만 허용합니다.
-- 외부 HTTPS→HTTP 다운그레이드, 외부 로컬·사설·링크 로컬 주소와 비표준 교차 호스트 포트를 차단합니다.
-- Portable ZIP에 승인 대상 설정 예제와 가이드를 포함합니다.
+```text
+Native WLAN 연결
+   ↓ identity 보완
+물리 Wi-Fi 후보 선택
+   ↓ 시작 ID 고정
+고정 ID의 카운터만 반복 조회
+   ├─ 같은 ID + BSSID 변경: 로밍으로 기록하고 계속
+   ├─ Native WLAN ID 변경: AdapterChanged
+   ├─ 고정 NIC 사용 불가: AdapterUnavailable
+   └─ 공급자 ID 불일치: CounterProviderMismatch
+```
 
-### 구조화된 단일 측정 보고서
+후속 샘플에서는 설명이 같거나 다른 활성 Wi-Fi가 존재하더라도 자동 전환하지 않습니다. 중단 전에 수집된 정상 샘플은 요약에 보존할 수 있지만 전용 종료 상태를 일반 성공으로 바꾸지 않습니다.
 
-- 최근 내부·외부 다운로드 결과를 제한된 메모리 이력으로 보관합니다.
-- JSON·CSV·HTML에 수신 바이트, 평균·최고 Mbps, TTFB, HTTP 상태, 프록시 사용, 스트림, 리다이렉트, 캐시 판정과 시간축 샘플을 개별 필드로 기록합니다.
-- 수신량·측정 시간·스트림 완료·샘플 수·캐시 헤더를 이용해 개별 결과의 Low/Medium/High 신뢰도를 판정합니다.
-- 복수 외부 대상 공통 저하, 대상별 편차, 캐시 적중 가능성, 경로 불일치와 인증 실패 등을 고정 규칙으로 판정합니다.
+## 어댑터 환경 진단
 
-### 반복 측정
+다음 로컬 인터페이스 범주를 구분합니다.
 
-- 선택적 예열 1회와 본 측정 1~5회를 지원합니다.
-- 예열 결과를 제외한 본 측정의 중앙값을 대표값으로 사용합니다.
-- 최소·최대·평균·모집단 표준편차·변동계수와 중앙값에 가장 가까운 대표 회차를 기록합니다.
-- 성공·실패·미완료 횟수를 구분합니다.
-- 개별 결과 품질, 반복 편차와 캐시 근거를 이용해 반복 결과의 Low/Medium/High 신뢰도를 판정합니다.
-- 대상 하나와 한 번의 반복 작업 전체 최대 예상 수신량을 각각 2GiB로 제한합니다.
-- 내부 URL 또는 외부 URL 최대 4개를 대상별로 순차 실행합니다.
+- 물리 Wi-Fi와 물리 Ethernet
+- Wi-Fi Direct·Hosted Network·SoftAP
+- VPN·터널
+- Hyper-V·VMware·VirtualBox·WSL·Docker
+- Bluetooth PAN, Loopback와 기타 가상 인터페이스
 
-### 반복 측정 전용 보고서
-
-- 최근 반복 측정 최대 8건을 앱 메모리에 보관합니다.
-- 중앙값·편차·신뢰도와 예열·본 측정 회차별 결과를 구조화 JSON과 key-value CSV로 저장합니다.
-- 외부 리소스와 스크립트가 없는 단일 HTML 보고서 및 SHA-256 목록을 생성합니다.
-- 대상 URL, 프록시 주소, PAC URL, SSID와 BSSID는 반복 보고서에 포함하지 않습니다.
-
-## 취소 경계
-
-현재 전송 계층은 동기 WinHTTP입니다.
-
-- 요청 전·요청 사이·반복 사이·대상 사이 취소는 즉시 반영합니다.
-- 이미 WinHTTP 연결·응답·본문 읽기 함수 안에서 블로킹된 현재 호출은 설정된 제한 시간이 끝나 반환된 뒤 취소 상태가 반영될 수 있습니다.
-- 동기 요청 핸들을 다른 스레드에서 강제로 닫지 않습니다.
-- 블로킹 호출의 즉시 취소는 향후 `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반 비동기 전송 계층으로 구현합니다.
+다중 물리 Wi-Fi, 다중 기본 게이트웨이, 유선·무선 동시 기본 경로와 활성 VPN·가상 NIC를 경고합니다. 전체 인터페이스 GUID, IP, MAC, DNS와 게이트웨이 주소 원문은 구조화 보고서에 포함하지 않습니다.
 
 ## 자동 검증 범위
 
-- .NET 10 Release 빌드
-- Core 결정론적 자체 점검
+- .NET 10 Release 전체 빌드와 경고의 오류 처리
+- Core 결정론적 SelfTest
 - Native WLAN API 및 서비스·권한 오류 경계
+- WLAN identity와 로컬 `NetworkInterface` 대응
+- 물리 Wi-Fi·VPN·가상 NIC 분류와 다중 후보 모호성
 - 수동 프록시·PAC·WPAD와 407 인증 상태 머신
 - 내부 DIRECT·합성 외부 PROXY HEAD/GET 측정
-- 수신량 상한, 다중 스트림, 리다이렉트, HTTP 오류, 시간초과와 협력적 취소
-- 승인 대상 JSON 엄격 검증과 Core 실행 경계
+- 수신량 상한, 다중 스트림, 리다이렉트, HTTP 오류와 시간초과
+- 승인 대상 JSON, 관리자 정책과 Core 실행 경계
 - 브라우저 관찰 처리량·BSSID 변경·정지·급락 계산
-- 일반·반복 보고서 JSON·CSV·HTML, 마스킹, CSV 수식 주입, HTML CSP와 SHA-256
-- 반복 측정 중앙값·편차·캐시·신뢰도·트래픽 상한
+- 정확 ID 강제 선택과 다른 NIC fallback 차단
+- 초기 WLAN·카운터 충돌, 실행 중 WLAN ID 변경과 공급자 불일치
+- 구조화 종료 상태의 보고서 매핑
+- 일반·반복·인터페이스·어댑터 보고서의 마스킹, CSV 수식 방지, HTML CSP와 SHA-256
 - 저장소·네트워크 통신 경계 감사
-- Portable ZIP·single-file EXE, PE 헤더, 금지 파일, 경로 순회와 무결성 검사
+- Portable ZIP·single-file EXE, PE 헤더, 금지 파일과 경로 순회 검사
 
 자동 HTTP 시험은 `127.0.0.1` 합성 서버와 합성 프록시만 사용합니다. GitHub Actions는 실제 외부 사이트, 회사 프록시, PAC/WPAD 또는 사내 서버에 접속하지 않습니다.
 
 ## 사용자가 실제 환경에서 확인할 범위
 
-- 실제 Windows 11 무선 NIC 선택과 Native WLAN 반환값
-- Aruba WLAN의 SSID·BSSID·RSSI·채널·PHY·링크 속도
+- 실제 Windows 11 무선 NIC와 Native WLAN 반환값
+- Aruba 환경의 SSID·BSSID·RSSI·채널·PHY·링크 속도
+- 내장 Wi-Fi와 USB Wi-Fi 동시 활성 시 실제 연결 NIC 선택
+- 같은 NIC의 BSSID 로밍과 다른 물리 Wi-Fi 전환 구분
+- USB Wi-Fi 제거, 드라이버 재시작과 절전 복귀 시 종료 상태
+- 회사 VPN, Hyper-V, WSL, VMware와 Wi-Fi Direct 분류
 - 회사 수동 프록시·바이패스·PAC·WPAD 결과
 - 실제 HTTP 407 Negotiate/NTLM 처리
 - TLS 검사와 회사 루트 인증서
 - GPO·EDR·SmartScreen 정책
 - 내부 기준 서버의 DIRECT 경로와 충분한 성능
 - 외부 승인 URL의 프록시 경유·정책·캐시·다운로드 안정성
-- 브라우저 표시 속도와 인터페이스 관찰값의 경향
-- 반복 측정의 중앙값과 편차가 실제 체감과 일치하는지
-- Portable ZIP·single-file 실행
-- 생성 보고서에 실제 사내 식별자가 남지 않는지
+- 브라우저 표시 속도와 고정 Wi-Fi 관찰값의 경향
+- 생성 보고서에 실제 사내 식별정보가 남지 않는지
 
-체크리스트는 [`docs/RELEASE_VALIDATION.md`](docs/RELEASE_VALIDATION.md)를 따릅니다.
+체크리스트는 [`docs/RELEASE_VALIDATION.md`](docs/RELEASE_VALIDATION.md)와 [`docs/BROWSER_OBSERVATION.md`](docs/BROWSER_OBSERVATION.md)를 따릅니다.
 
 ## 남은 개발 작업
 
-1. **비동기 WinHTTP 전송 계층**: 블로킹 중인 현재 요청까지 안전하게 즉시 취소할 수 있도록 `WINHTTP_FLAG_ASYNC`와 상태 콜백으로 전환합니다.
-2. **관리자 강제 승인 정책**: 일반 사용자가 승인 목록을 해제하지 못하도록 ProgramData·ACL 기반 강제 모드와 명확한 우선순위를 추가합니다.
-3. **DIRECT DNS 주소 검증**: 프록시를 사용하지 않는 외부 DIRECT 경로의 A/AAAA 결과와 DNS 리바인딩 경계를 검증합니다. 회사 프록시 경유 외부 측정에는 불필요한 로컬 DNS를 강제하지 않습니다.
-4. **코드 서명**: Authenticode 인증서가 확보되면 빌드 후 서명과 서명 검증 단계를 추가합니다.
-5. **실환경 결과 기반 호환성 수정**: 사용자 검증에서 확인되는 WLAN 드라이버, PAC/WPAD, 407, TLS 검사, GPO·EDR 차이를 반영합니다.
-6. **장시간·다중 환경 안정성**: VPN·Hyper-V·VMware 가상 NIC 혼재, 절전·재연결과 장시간 반복 측정 시나리오를 확대합니다.
+### P0
+
+1. **현재 PR 전체 CI 통과와 병합**
+   - 기준선 Release 빌드 실패를 만든 누락 ID 유틸리티와 중복 App 감시 파일 정리
+   - Windows CI, ObservationSmoke, Local Report CI와 Release Package CI 통과
+2. **검증된 `v0.1.0-alpha.5` 발행**
+   - 병합된 `main`에서 새 태그 생성
+   - 네 자산 게시 및 SHA-256 재확인
+   - 실제 Release 존재를 확인한 뒤에만 공개 버전으로 표기
+
+### P1
+
+3. **비동기 WinHTTP 전송 계층**
+   - `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반으로 전환
+   - 연결·응답·본문 수신 중 안전한 즉시 취소
+   - 실제 회사 프록시의 407 재인증과 취소 경쟁 검증
+4. **목적지별 Windows 라우팅 근거**
+   - 실제 대상 또는 프록시 목적지의 route/interface metric을 로컬에서 판정
+   - IP·게이트웨이 원문을 보고서에 노출하지 않는 구조화 요약
+5. **장시간·상태 전환 안정성**
+   - 절전·재연결, USB NIC 제거, VPN 연결·해제와 가상 NIC 생성·삭제
+   - 장시간 반복 측정과 브라우저 관찰 중 이벤트 경쟁
+
+### P2
+
+6. **Authenticode 코드 서명**
+   - 인증서·타임스탬프 확보 후 빌드 서명과 CI 검증
+7. **실환경 결과 기반 호환성 수정**
+   - WLAN 드라이버, PAC/WPAD, 407, TLS 검사와 GPO·EDR 차이 반영
+8. **정식 `v0.1.0` 전환**
+   - 실제 Aruba WLAN·회사 프록시·다중 NIC·보고서 마스킹 검증 완료 후 진행
