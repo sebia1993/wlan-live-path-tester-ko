@@ -31,7 +31,8 @@ public sealed class BrowserObservationRunner
                 BrowserObservationStatus.InvalidOptions,
                 null,
                 null,
-                string.Join(" ", validationErrors));
+                string.Join(" ", validationErrors),
+                BrowserObservationTerminationReason.InvalidOptions);
         }
 
         if (!OperatingSystem.IsWindows())
@@ -40,7 +41,8 @@ public sealed class BrowserObservationRunner
                 BrowserObservationStatus.UnsupportedPlatform,
                 null,
                 null,
-                "Windows에서만 브라우저 다운로드 관찰을 실행할 수 있습니다.");
+                "Windows에서만 브라우저 다운로드 관찰을 실행할 수 있습니다.",
+                BrowserObservationTerminationReason.UnsupportedPlatform);
         }
 
         progress?.Report(new BrowserObservationProgress(
@@ -64,7 +66,8 @@ public sealed class BrowserObservationRunner
                 BrowserObservationStatus.NoWirelessConnection,
                 null,
                 null,
-                $"연결된 WLAN 인터페이스가 없어 관찰을 시작하지 않았습니다. {initialWlanRead.Message}");
+                $"연결된 WLAN 인터페이스가 없어 관찰을 시작하지 않았습니다. {initialWlanRead.Message}",
+                BrowserObservationTerminationReason.NoWirelessConnection);
         }
 
         InterfaceCounterSelectionMode initialSelectionMode =
@@ -94,7 +97,9 @@ public sealed class BrowserObservationRunner
                 initialWlan,
                 initialCounterRead.Message
                 + identityContext
-                + " 다른 활성 Wi-Fi 인터페이스를 임의로 선택하지 않았습니다.");
+                + " 다른 활성 Wi-Fi 인터페이스를 임의로 선택하지 않았습니다.",
+                BrowserObservationTerminationPolicy.FromStatus(
+                    initialFailureStatus));
         }
 
         InterfaceCounterSnapshot previousCounter =
@@ -113,7 +118,8 @@ public sealed class BrowserObservationRunner
                 null,
                 initialWlan,
                 exception.Message
-                + " 서로 다른 NIC의 카운터를 결합하지 않기 위해 관찰을 시작하지 않았습니다.");
+                + " 서로 다른 NIC의 카운터를 결합하지 않기 위해 관찰을 시작하지 않았습니다.",
+                BrowserObservationTerminationReason.CounterProviderMismatch);
         }
 
         WlanSnapshot? previousWlan = initialWlan;
@@ -300,7 +306,8 @@ public sealed class BrowserObservationRunner
                 BrowserObservationStatus.Canceled,
                 canceledSummary,
                 initialWlan,
-                "사용자 요청으로 브라우저 관찰을 중단했습니다. 수집된 샘플만 로컬 결과에 유지합니다.");
+                "사용자 요청으로 브라우저 관찰을 중단했습니다. 수집된 샘플만 로컬 결과에 유지합니다.",
+                BrowserObservationTerminationReason.CanceledByUser);
         }
         catch (Exception exception)
         {
@@ -323,7 +330,8 @@ public sealed class BrowserObservationRunner
                     : BrowserObservationStatus.PartialSuccess,
                 failedSummary,
                 initialWlan,
-                $"브라우저 관찰 중 오류가 발생했습니다: {exception.Message}");
+                $"브라우저 관찰 중 오류가 발생했습니다: {exception.Message}",
+                BrowserObservationTerminationReason.Failed);
         }
 
         DateTimeOffset completedAt = DateTimeOffset.UtcNow;
@@ -346,7 +354,8 @@ public sealed class BrowserObservationRunner
             status,
             summary,
             initialWlan,
-            summary.Message);
+            summary.Message,
+            BrowserObservationTerminationReason.Completed);
     }
 
     private static BrowserObservationResult CreateInterruptedResult(
@@ -378,7 +387,8 @@ public sealed class BrowserObservationRunner
             status,
             summary,
             initialWlan,
-            message);
+            message,
+            BrowserObservationTerminationPolicy.FromStatus(status));
     }
 
     private static int CalculateSampleCount(
