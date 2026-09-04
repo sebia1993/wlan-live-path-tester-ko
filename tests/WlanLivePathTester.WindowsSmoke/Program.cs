@@ -1,4 +1,5 @@
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.NetworkEnvironment;
 using WlanLivePathTester.Windows.NetworkEnvironment;
 using WlanLivePathTester.Windows.Proxy;
 using WlanLivePathTester.Windows.Wlan;
