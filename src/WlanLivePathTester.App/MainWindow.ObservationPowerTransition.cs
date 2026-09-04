@@ -9,6 +9,7 @@ public partial class MainWindow
 {
     private const int WmPowerBroadcast = 0x0218;
     private const int PbtApmSuspend = 0x0004;
+    private const int PbtApmResumeCritical = 0x0006;
     private const int PbtApmResumeSuspend = 0x0007;
     private const int PbtApmPowerStatusChange = 0x000A;
     private const int PbtApmResumeAutomatic = 0x0012;
@@ -101,7 +102,9 @@ public partial class MainWindow
         ObservationPowerTransition? transition = wParam.ToInt64() switch
         {
             PbtApmSuspend => ObservationPowerTransition.Suspend,
-            PbtApmResumeSuspend or PbtApmResumeAutomatic =>
+            PbtApmResumeCritical
+                or PbtApmResumeSuspend
+                or PbtApmResumeAutomatic =>
                 ObservationPowerTransition.Resume,
             PbtApmPowerStatusChange =>
                 ObservationPowerTransition.PowerStatusChanged,
