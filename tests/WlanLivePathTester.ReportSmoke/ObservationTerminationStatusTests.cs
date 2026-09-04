@@ -24,11 +24,11 @@ internal static class ObservationTerminationStatusTests
             Summary: null,
             InitialWlan: null,
             Message: $"합성 종료 상태: {status}");
-        ReportObservationSection? mapped =
-            ReportObservationMapper.FromResult(result);
+        ReportObservationSection mapped =
+            ReportObservationMapper.FromResult(result)
+            ?? throw new InvalidOperationException(
+                "관찰 종료 결과를 보고서 섹션으로 매핑해야 합니다.");
 
-        Ensure(mapped is not null,
-            "관찰 종료 결과를 보고서 섹션으로 매핑해야 합니다.");
         Ensure(mapped.Status.Equals(
                 status.ToString(),
                 StringComparison.Ordinal),
