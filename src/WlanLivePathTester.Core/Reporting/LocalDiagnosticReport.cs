@@ -65,7 +65,7 @@ public sealed record ReportMeasurementSection(
     string Status,
     DateTimeOffset StartedAt,
     DateTimeOffset CompletedAt,
-    double DurationSeconds,
+    double? DurationSeconds,
     long BytesReceived,
     double? AverageMbps,
     double? PeakMbps,
