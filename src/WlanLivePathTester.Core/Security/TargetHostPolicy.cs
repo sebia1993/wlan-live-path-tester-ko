@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Net;
+using WlanLivePathTester.Core.Configuration;
 using WlanLivePathTester.Core.Models;
 
 namespace WlanLivePathTester.Core.Security;
@@ -19,14 +21,16 @@ public static class TargetHostPolicy
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(destination);
 
-        Uri origin = new(target.Url, UriKind.Absolute);
+        MeasurementTargetDefinition effectiveTarget =
+            ApprovedTargetRuntimeCatalog.Apply(target);
+        Uri origin = new(effectiveTarget.Url, UriKind.Absolute);
         string destinationHost = Normalize(destination.IdnHost);
         string originHost = Normalize(origin.IdnHost);
 
         bool hostAllowed = destinationHost.Equals(
                 originHost,
                 StringComparison.OrdinalIgnoreCase)
-            || (target.AllowedRedirectHosts?.Any(host =>
+            || (effectiveTarget.AllowedRedirectHosts?.Any(host =>
                 destinationHost.Equals(
                     Normalize(host),
                     StringComparison.OrdinalIgnoreCase)) == true);
@@ -113,6 +117,22 @@ public static class TargetHostPolicy
         return errors;
     }
 
-    private static string Normalize(string? host) =>
-        (host ?? string.Empty).Trim().TrimEnd('.');
+    private static string Normalize(string? host)
+    {
+        string trimmed = (host ?? string.Empty).Trim().TrimEnd('.');
+        if (string.IsNullOrWhiteSpace(trimmed)
+            || IPAddress.TryParse(trimmed, out IPAddress? address))
+        {
+            return address?.ToString() ?? trimmed;
+        }
+
+        try
+        {
+            return new IdnMapping().GetAscii(trimmed).ToLowerInvariant();
+        }
+        catch (ArgumentException)
+        {
+            return trimmed.ToLowerInvariant();
+        }
+    }
 }
