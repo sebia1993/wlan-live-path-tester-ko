@@ -128,7 +128,7 @@ public partial class MainWindow
             Margin = new Thickness(0, 8, 0, 0),
             Foreground = new SolidColorBrush(Color.FromRgb(86, 101, 115)),
             TextWrapping = TextWrapping.Wrap,
-            Text = "이 모드는 프로그램이 외부 요청을 만들지 않습니다. Edge·Chrome 등에서 직접 다운로드하는 동안 Wi-Fi 인터페이스 전체 수신량과 WLAN 상태 변화를 관찰합니다."
+            Text = "이 모드는 프로그램이 외부 요청을 만들지 않습니다. Edge·Chrome 등에서 직접 다운로드하는 동안 시작 시 고정한 물리 Wi-Fi의 전체 수신량과 WLAN 상태 변화를 관찰합니다."
         });
         content.Children.Add(new Border
         {
@@ -141,7 +141,7 @@ public partial class MainWindow
             Child = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
-                Text = "사용 순서: 관찰 시작 → 3초 기준 수집 완료 안내 확인 → 브라우저에서 다운로드 시작. 다른 프로그램의 트래픽도 합산되므로 프로세스별 속도라고 해석하면 안 됩니다."
+                Text = "사용 순서: 관찰 시작 → 3초 기준 수집 완료 안내 확인 → 브라우저에서 다운로드 시작. 관찰 중 물리 Wi-Fi가 바뀌거나 고정 카운터를 읽지 못하면 다른 NIC로 전환하지 않고 별도 상태로 종료합니다."
             }
         });
         content.Children.Add(durationRow);
@@ -201,7 +201,7 @@ public partial class MainWindow
         _observationCancellation = new CancellationTokenSource();
         SetObservationRunningState(isRunning: true);
         SetObservationResult(
-            "관찰 준비 중입니다. 먼저 3초 동안 백그라운드 트래픽 기준치를 수집합니다. 기준 수집 완료 안내 후 브라우저 다운로드를 시작하십시오.");
+            "관찰 준비 중입니다. 물리 Wi-Fi를 하나로 고정한 뒤 3초 동안 백그라운드 트래픽 기준치를 수집합니다. 기준 수집 완료 안내 후 브라우저 다운로드를 시작하십시오.");
 
         try
         {
@@ -278,7 +278,7 @@ public partial class MainWindow
         builder.AppendLine($"기준치 제외 평균: {FormatNullableMbps(summary.AverageAdjustedReceiveMbps)} · 최고: {FormatNullableMbps(summary.PeakAdjustedReceiveMbps)}");
         builder.AppendLine($"관찰 수신량: {FormatObservationBytes(summary.TotalReceiveBytes)}");
         builder.AppendLine($"일시 정지: {summary.PauseCount}회 · 급락: {summary.SuddenDropCount}회 · BSSID 변경: {summary.BssidChangeCount}회");
-        builder.AppendLine($"인터페이스 변경: {summary.AdapterChangeCount}회 · 카운터 재설정: {summary.CounterResetCount}회 · WLAN 미연결 샘플: {summary.WlanDisconnectedSampleCount}개");
+        builder.AppendLine($"인터페이스 변경 샘플: {summary.AdapterChangeCount}회 · 카운터 재설정: {summary.CounterResetCount}회 · WLAN 미연결 샘플: {summary.WlanDisconnectedSampleCount}개");
         builder.AppendLine($"신뢰도: {(summary.Confidence == ObservationConfidence.Medium ? "중간" : "낮음")}");
         builder.AppendLine($"한계: {summary.Limitation}");
         return builder.ToString().TrimEnd();
@@ -319,6 +319,9 @@ public partial class MainWindow
             BrowserObservationStatus.Success => "완료",
             BrowserObservationStatus.PartialSuccess => "일부 완료",
             BrowserObservationStatus.Canceled => "사용자 중지",
+            BrowserObservationStatus.AdapterChanged => "물리 Wi-Fi 변경으로 중단",
+            BrowserObservationStatus.AdapterUnavailable => "고정 Wi-Fi 카운터 사용 불가",
+            BrowserObservationStatus.CounterProviderMismatch => "카운터 공급자 ID 불일치",
             BrowserObservationStatus.UnsupportedPlatform => "지원하지 않는 운영체제",
             BrowserObservationStatus.NoWirelessConnection => "무선 연결 없음",
             BrowserObservationStatus.InterfaceUnavailable => "인터페이스 통계 확인 불가",
