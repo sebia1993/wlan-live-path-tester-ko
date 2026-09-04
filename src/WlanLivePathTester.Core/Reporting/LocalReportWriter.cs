@@ -230,6 +230,11 @@ public static class LocalReportWriter
         }
 
         Add(rows, "browserObservation", "status", observation.Status);
+        Add(
+            rows,
+            "browserObservation",
+            "terminationReason",
+            observation.TerminationReason);
         Add(rows, "browserObservation", "startedAt", Iso(observation.StartedAt));
         Add(rows, "browserObservation", "completedAt", Iso(observation.CompletedAt));
         Add(rows, "browserObservation", "observedSeconds", Number(observation.ObservedSeconds));
