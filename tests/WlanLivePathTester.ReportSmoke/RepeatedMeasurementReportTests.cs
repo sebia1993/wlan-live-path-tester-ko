@@ -54,23 +54,31 @@ internal static class RepeatedMeasurementReportTests
         RepeatedMeasurementReportDocument document)
     {
         string csv = RepeatedMeasurementReportWriter.RenderCsv(document);
-        string[] lines = csv.Split(
-            ['\r', '\n'],
-            StringSplitOptions.RemoveEmptyEntries);
 
-        Ensure(lines.Length == 6,
-            "CSV는 헤더, 요약 1행, 예열·본 측정 4행이어야 합니다.");
-        Ensure(lines[1].Contains("\"summary\"", StringComparison.Ordinal),
-            "CSV에 요약 행 구분이 필요합니다.");
-        Ensure(lines.Skip(2).All(line =>
-                line.Contains("\"run\"", StringComparison.Ordinal)),
-            "CSV의 각 회차는 run 행이어야 합니다.");
-        Ensure(csv.Contains("\"100\"", StringComparison.Ordinal),
-            "CSV에 중앙값을 기록해야 합니다.");
+        Ensure(csv.StartsWith("section,key,value", StringComparison.Ordinal),
+            "CSV는 section,key,value 스키마를 사용해야 합니다.");
+        Ensure(csv.Contains(
+                "\"repeatedMeasurement.1\",\"medianMbps\",\"100\"",
+                StringComparison.Ordinal),
+            "CSV에 구조화된 중앙값 행이 필요합니다.");
+        Ensure(csv.Contains(
+                "\"repeatedMeasurement.1\",\"successCount\",\"3\"",
+                StringComparison.Ordinal),
+            "CSV에 성공 본 측정 횟수 행이 필요합니다.");
+        for (int runIndex = 1; runIndex <= 4; runIndex++)
+        {
+            Ensure(csv.Contains(
+                    $"\"repeatedMeasurement.1.run.{runIndex}\"",
+                    StringComparison.Ordinal),
+                $"CSV에 반복 회차 {runIndex} 섹션이 필요합니다.");
+        }
+
         Ensure(csv.Contains("'=HYPERLINK", StringComparison.Ordinal),
             "CSV에서 대상 이름 수식 시작 문자를 비활성화해야 합니다.");
         Ensure(!csv.Contains("example.invalid", StringComparison.OrdinalIgnoreCase),
             "CSV에 대상 URL 호스트가 남으면 안 됩니다.");
+        Ensure(!csv.Contains("token=secret", StringComparison.Ordinal),
+            "CSV에 대상 URL 쿼리가 남으면 안 됩니다.");
     }
 
     private static void VerifiesHtml(
@@ -92,8 +100,10 @@ internal static class RepeatedMeasurementReportTests
             "HTML에 iframe을 포함하면 안 됩니다.");
         Ensure(!html.Contains("example.invalid", StringComparison.OrdinalIgnoreCase),
             "HTML에 대상 URL 호스트가 남으면 안 됩니다.");
+        Ensure(!html.Contains("token=secret", StringComparison.Ordinal),
+            "HTML에 대상 URL 쿼리가 남으면 안 됩니다.");
         Ensure(html.Contains("=HYPERLINK", StringComparison.Ordinal),
-            "HTML은 대상 이름을 텍스트로 표시해야 합니다.");
+            "HTML은 대상 이름을 인코딩된 텍스트로 표시해야 합니다.");
     }
 
     private static void VerifiesLocalFiles(
