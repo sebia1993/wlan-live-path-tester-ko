@@ -188,7 +188,7 @@ internal static class ObservationWlanIdentityContinuityTrackerTests
             new PinnedObservationInterface(
                 WlanInterfaceId: PrimaryId,
                 CounterInterfaceId: PrimaryId,
-                InterfaceDescription: "Synthetic Wi-Fi"),
+                WlanInterfaceDescription: "Synthetic Wi-Fi"),
             unavailableThreshold);
 
     private static WlanSnapshot Connected(string? interfaceId) =>
