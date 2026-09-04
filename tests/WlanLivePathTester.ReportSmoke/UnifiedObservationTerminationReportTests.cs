@@ -95,9 +95,9 @@ internal static class UnifiedObservationTerminationReportTests
     {
         BrowserObservationResult legacy = new(
             BrowserObservationStatus.Canceled,
-            summary: null,
-            initialWlan: null,
-            message: "기존 네 값 결과");
+            null,
+            null,
+            "기존 네 값 결과");
         ReportObservationSection mapped =
             ReportObservationMapper.FromResult(legacy)
             ?? throw new InvalidOperationException(
