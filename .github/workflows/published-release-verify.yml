@@ -1,0 +1,87 @@
+name: Published Release Verification
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published prerelease tag to verify"
+        required: true
+        default: "v0.1.0-alpha.5"
+        type: string
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/published-release-verify.yml'
+      - '.github/workflows/published-release-verify-branch-trigger.yml'
+      - '.github/workflows/manual-prerelease.yml'
+      - 'scripts/verify-published-release.ps1'
+      - 'scripts/build-release.ps1'
+      - 'scripts/test-release-package.ps1'
+      - 'docs/PUBLISHED_RELEASE_VERIFICATION.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: published-release-verify-${{ github.event.release.tag_name || inputs.tag || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: download-hash-package-verify
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EVENT_NAME: ${{ github.event_name }}
+      RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
+      INPUT_TAG: ${{ inputs.tag }}
+      PULL_REQUEST_BASELINE_TAG: v0.1.0-alpha.5
+
+    steps:
+      - name: Checkout verification source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Resolve tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = switch ($env:EVENT_NAME) {
+              'release' { $env:RELEASE_EVENT_TAG }
+              'workflow_dispatch' { $env:INPUT_TAG }
+              'pull_request' { $env:PULL_REQUEST_BASELINE_TAG }
+              default { throw "Unsupported event: $env:EVENT_NAME" }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+              throw 'A published prerelease tag is required.'
+          }
+
+          "VERIFY_RELEASE_TAG=$($tag.Trim())" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Published release tag: $($tag.Trim())"
+
+      - name: Download and verify published release
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\verify-published-release.ps1
+          -Tag $env:VERIFY_RELEASE_TAG
+          -Repository $env:GITHUB_REPOSITORY
+
+      - name: Write verification summary
+        if: success()
+        shell: pwsh
+        run: |
+          @"
+          ## Published release verification passed
+
+          - Repository: `$env:GITHUB_REPOSITORY`
+          - Tag: `$env:VERIFY_RELEASE_TAG`
+          - Downloaded all four release assets again
+          - Verified GitHub asset digests, `SHA256SUMS.txt`, file sizes, PE headers, ProductVersion, Portable ZIP structure and `BUILD_INFO.txt`
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
