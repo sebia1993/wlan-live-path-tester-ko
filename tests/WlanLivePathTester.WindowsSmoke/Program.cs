@@ -1,4 +1,6 @@
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.NetworkEnvironment;
+using WlanLivePathTester.Windows.NetworkEnvironment;
 using WlanLivePathTester.Windows.Proxy;
 using WlanLivePathTester.Windows.Wlan;
 
@@ -15,6 +17,11 @@ internal static class Program
         }
 
         if (!CheckProxySettingsBoundary())
+        {
+            return 1;
+        }
+
+        if (!CheckNetworkEnvironmentBoundary())
         {
             return 1;
         }
@@ -78,6 +85,48 @@ internal static class Program
             if (value is not null && value != "[설정됨]")
             {
                 Console.Error.WriteLine("The public proxy-settings API exposed an unmasked value.");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool CheckNetworkEnvironmentBoundary()
+    {
+        LocalNetworkEnvironmentSnapshot snapshot =
+            LocalNetworkEnvironmentReader.ReadCurrent();
+        Console.WriteLine(
+            $"Network environment: adapters={snapshot.Adapters.Count}, active={snapshot.Assessment.ActiveAdapterCount}, wireless={snapshot.Assessment.ActiveWirelessCount}, gateways={snapshot.Assessment.ActiveDefaultGatewayCount}, ambiguous={snapshot.Assessment.RouteSelectionMayBeAmbiguous}");
+        Console.WriteLine(snapshot.Message);
+
+        if (string.IsNullOrWhiteSpace(snapshot.Message))
+        {
+            Console.Error.WriteLine("The network environment reader returned an empty message.");
+            return false;
+        }
+
+        if (snapshot.Assessment.TotalAdapterCount != snapshot.Adapters.Count)
+        {
+            Console.Error.WriteLine("The network environment summary adapter count is inconsistent.");
+            return false;
+        }
+
+        foreach (LocalNetworkAdapterSnapshot adapter in snapshot.Adapters)
+        {
+            if (string.IsNullOrWhiteSpace(adapter.DisplayName)
+                || adapter.DisplayName.Contains('\r')
+                || adapter.DisplayName.Contains('\n'))
+            {
+                Console.Error.WriteLine("An adapter display name is empty or contains a line break.");
+                return false;
+            }
+
+            if (adapter.GatewayCount < 0
+                || adapter.UnicastAddressCount < 0
+                || adapter.SpeedBitsPerSecond is <= 0)
+            {
+                Console.Error.WriteLine("An adapter exposed an invalid count or link speed.");
                 return false;
             }
         }
