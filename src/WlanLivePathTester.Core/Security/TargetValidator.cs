@@ -27,17 +27,27 @@ public static class TargetValidator
             return errors;
         }
 
-        if (ApprovedTargetRuntimeCatalog.IsActive)
+        ApprovedTargetRuntimePolicyStatus policy =
+            ApprovedTargetRuntimeCatalog.GetStatus();
+        if (policy.IsActive)
         {
-            if (!ApprovedTargetRuntimeCatalog.TryResolve(
-                    target,
-                    out MeasurementTargetDefinition approved))
+            if (policy.IsBlocked)
             {
-                errors.Add("현재 승인 대상 목록에 등록되지 않은 URL입니다. 고급 수동 입력 모드를 명시적으로 선택하거나 승인 목록을 갱신하십시오.");
+                errors.Add("관리자 강제 승인 대상 정책을 읽거나 검증하지 못해 모든 다운로드 측정을 차단했습니다. 관리자 설정을 복구한 뒤 다시 시도하십시오.");
+            }
+            else if (!ApprovedTargetRuntimeCatalog.TryResolve(
+                         target,
+                         out MeasurementTargetDefinition approved))
+            {
+                errors.Add(policy.IsEnforced
+                    ? "관리자 강제 승인 대상 목록에 등록되지 않은 URL입니다. 수동 입력으로 우회할 수 없습니다."
+                    : "현재 승인 대상 목록에 등록되지 않은 URL입니다. 고급 수동 입력 모드를 명시적으로 선택하거나 승인 목록을 갱신하십시오.");
             }
             else if (!MatchesApprovedRuntimeSettings(target, approved))
             {
-                errors.Add("현재 입력한 수신량·제한 시간·스트림·리다이렉트 또는 경로 제한이 승인 대상 설정과 일치하지 않습니다.");
+                errors.Add(policy.IsEnforced
+                    ? "현재 입력한 실행 제한이 관리자 강제 승인 대상 설정과 일치하지 않습니다."
+                    : "현재 입력한 수신량·제한 시간·스트림·리다이렉트 또는 경로 제한이 승인 대상 설정과 일치하지 않습니다.");
             }
         }
 

@@ -2,12 +2,22 @@ using WlanLivePathTester.Core.Models;
 
 namespace WlanLivePathTester.Core.Configuration;
 
+public sealed record ApprovedTargetRuntimePolicyStatus(
+    bool IsActive,
+    bool IsEnforced,
+    bool IsBlocked,
+    int TargetCount,
+    string SourceDescription,
+    string? BlockReason);
+
 public static class ApprovedTargetRuntimeCatalog
 {
     private static readonly object Sync = new();
     private static IReadOnlyDictionary<string, MeasurementTargetDefinition> _targets =
-        new Dictionary<string, MeasurementTargetDefinition>(
-            StringComparer.OrdinalIgnoreCase);
+        EmptyTargets();
+    private static bool _isEnforced;
+    private static string _sourceDescription = "설정 없음";
+    private static string? _blockReason;
 
     public static bool IsActive
     {
@@ -15,15 +25,49 @@ public static class ApprovedTargetRuntimeCatalog
         {
             lock (Sync)
             {
-                return _targets.Count > 0;
+                return _targets.Count > 0
+                    || _isEnforced
+                    || _blockReason is not null;
+            }
+        }
+    }
+
+    public static bool IsEnforced
+    {
+        get
+        {
+            lock (Sync)
+            {
+                return _isEnforced;
+            }
+        }
+    }
+
+    public static bool IsBlocked
+    {
+        get
+        {
+            lock (Sync)
+            {
+                return _blockReason is not null;
             }
         }
     }
 
     public static void Replace(
-        IEnumerable<MeasurementTargetDefinition> targets)
+        IEnumerable<MeasurementTargetDefinition> targets) =>
+        Configure(
+            targets,
+            enforceApprovedTargets: false,
+            sourceDescription: "로컬 승인 대상");
+
+    public static void Configure(
+        IEnumerable<MeasurementTargetDefinition> targets,
+        bool enforceApprovedTargets,
+        string sourceDescription)
     {
         ArgumentNullException.ThrowIfNull(targets);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceDescription);
 
         Dictionary<string, MeasurementTargetDefinition> replacement =
             new(StringComparer.OrdinalIgnoreCase);
@@ -37,9 +81,34 @@ public static class ApprovedTargetRuntimeCatalog
             }
         }
 
+        if (replacement.Count == 0)
+        {
+            throw new InvalidDataException(
+                "승인 대상 실행 정책에는 측정 대상이 하나 이상 필요합니다.");
+        }
+
         lock (Sync)
         {
             _targets = replacement;
+            _isEnforced = enforceApprovedTargets;
+            _sourceDescription = sourceDescription;
+            _blockReason = null;
+        }
+    }
+
+    public static void BlockEnforcedPolicy(
+        string sourceDescription,
+        string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceDescription);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        lock (Sync)
+        {
+            _targets = EmptyTargets();
+            _isEnforced = true;
+            _sourceDescription = sourceDescription;
+            _blockReason = reason;
         }
     }
 
@@ -47,8 +116,10 @@ public static class ApprovedTargetRuntimeCatalog
     {
         lock (Sync)
         {
-            _targets = new Dictionary<string, MeasurementTargetDefinition>(
-                StringComparer.OrdinalIgnoreCase);
+            _targets = EmptyTargets();
+            _isEnforced = false;
+            _sourceDescription = "설정 없음";
+            _blockReason = null;
         }
     }
 
@@ -60,10 +131,16 @@ public static class ApprovedTargetRuntimeCatalog
 
         lock (Sync)
         {
+            if (_blockReason is not null)
+            {
+                effective = requested;
+                return false;
+            }
+
             if (_targets.Count == 0)
             {
                 effective = requested;
-                return true;
+                return !_isEnforced;
             }
 
             if (_targets.TryGetValue(
@@ -94,7 +171,30 @@ public static class ApprovedTargetRuntimeCatalog
         }
     }
 
-    private static string CreateKey(NetworkPathKind pathKind, string url)
+    public static ApprovedTargetRuntimePolicyStatus GetStatus()
+    {
+        lock (Sync)
+        {
+            return new ApprovedTargetRuntimePolicyStatus(
+                IsActive: _targets.Count > 0
+                    || _isEnforced
+                    || _blockReason is not null,
+                IsEnforced: _isEnforced,
+                IsBlocked: _blockReason is not null,
+                TargetCount: _targets.Count,
+                SourceDescription: _sourceDescription,
+                BlockReason: _blockReason);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, MeasurementTargetDefinition>
+        EmptyTargets() =>
+        new Dictionary<string, MeasurementTargetDefinition>(
+            StringComparer.OrdinalIgnoreCase);
+
+    private static string CreateKey(
+        NetworkPathKind pathKind,
+        string url)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         Uri uri = new(url, UriKind.Absolute);
