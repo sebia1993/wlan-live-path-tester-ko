@@ -8,6 +8,9 @@ namespace WlanLivePathTester.ReportSmoke;
 
 internal static class NetworkEnvironmentReportTests
 {
+    private const string SecretInterfaceId =
+        "A1B2C3D4-E5F6-47A8-9123-1234567890AB";
+
 #pragma warning disable CA2255
     [ModuleInitializer]
 #pragma warning restore CA2255
@@ -80,6 +83,8 @@ internal static class NetworkEnvironmentReportTests
             "CSV에 인터페이스 이름 필드를 만들면 안 됩니다.");
         Ensure(!csv.Contains("description", StringComparison.OrdinalIgnoreCase),
             "CSV에 인터페이스 설명 필드를 만들면 안 됩니다.");
+        Ensure(!csv.Contains("interfaceId", StringComparison.OrdinalIgnoreCase),
+            "CSV에 인터페이스 ID 필드를 만들면 안 됩니다.");
         AssertSecretsAbsent(csv, "CSV");
     }
 
@@ -164,7 +169,8 @@ internal static class NetworkEnvironmentReportTests
                 category: NetworkAdapterCategory.Wireless,
                 gateway: true,
                 isVirtual: false,
-                isVpn: false),
+                isVpn: false,
+                interfaceId: SecretInterfaceId),
             Adapter(
                 displayName: "Company VPN C:\\Users\\alice",
                 description: "AnyConnect 172.16.1.20",
@@ -172,7 +178,9 @@ internal static class NetworkEnvironmentReportTests
                 category: NetworkAdapterCategory.Tunnel,
                 gateway: true,
                 isVirtual: true,
-                isVpn: true),
+                isVpn: true,
+                interfaceId:
+                    "B1B2C3D4-E5F6-47A8-9123-1234567890AB"),
             Adapter(
                 displayName: "vEthernet (Default Switch)",
                 description: "Hyper-V Virtual Ethernet Adapter",
@@ -180,7 +188,9 @@ internal static class NetworkEnvironmentReportTests
                 category: NetworkAdapterCategory.Ethernet,
                 gateway: false,
                 isVirtual: true,
-                isVpn: false)
+                isVpn: false,
+                interfaceId:
+                    "C1B2C3D4-E5F6-47A8-9123-1234567890AB")
         ];
         NetworkEnvironmentAssessment assessment =
             NetworkEnvironmentEvaluator.Evaluate(adapters);
@@ -199,7 +209,8 @@ internal static class NetworkEnvironmentReportTests
         NetworkAdapterCategory category,
         bool gateway,
         bool isVirtual,
-        bool isVpn) =>
+        bool isVpn,
+        string interfaceId) =>
         new(
             DisplayName: displayName,
             Description: description,
@@ -215,7 +226,8 @@ internal static class NetworkEnvironmentReportTests
             SupportsMulticast: true,
             IsVirtual: isVirtual,
             IsVpn: isVpn,
-            ReadError: null);
+            ReadError: null,
+            InterfaceId: interfaceId);
 
     private static void AssertSecretsAbsent(
         string content,
@@ -230,7 +242,10 @@ internal static class NetworkEnvironmentReportTests
             "172.16.1.20",
             "C:\\Users\\alice",
             "Company VPN",
-            "vEthernet (Default Switch)"
+            "vEthernet (Default Switch)",
+            SecretInterfaceId,
+            "B1B2C3D4-E5F6-47A8-9123-1234567890AB",
+            "C1B2C3D4-E5F6-47A8-9123-1234567890AB"
         ];
 
         foreach (string secret in secrets)
