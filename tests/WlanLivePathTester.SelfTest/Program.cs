@@ -16,7 +16,12 @@ internal static class Program
             ("외부 대상의 FTP 거부", RejectsFtp),
             ("URL 사용자정보 거부", RejectsUrlCredentials),
             ("외부 대상의 사설 IP 거부", RejectsPrivateExternalAddress),
-            ("합성 설정 로드", LoadsSyntheticConfiguration),
+            ("합성 설정과 승인 리다이렉트 로드", LoadsSyntheticConfiguration),
+            ("동일 호스트 리다이렉트 허용", AllowsSameHostRedirect),
+            ("미승인 리다이렉트 호스트 거부", RejectsUnapprovedRedirectHost),
+            ("승인된 리다이렉트 호스트 허용", AllowsApprovedRedirectHost),
+            ("승인 호스트 비표준 포트 거부", RejectsNonDefaultRedirectPort),
+            ("외부 승인 목록의 사설 IP 거부", RejectsPrivateAllowedRedirectHost),
             ("프록시 인증 실패 판정", DetectsProxyAuthenticationFailure),
             ("공통 외부 경로 저하 판정", DetectsCommonExternalPathDegradation),
             ("2.4 GHz 채널 변환", Converts24GhzChannel),
@@ -94,7 +99,10 @@ internal static class Program
             {
               "name": "외부 예시",
               "url": "https://example.invalid/test.bin",
-              "requireProxy": true
+              "requireProxy": true,
+              "allowedRedirectHosts": [
+                "cdn.example.invalid"
+              ]
             }
           ]
         }
@@ -106,6 +114,71 @@ internal static class Program
         Assert(targets.Count == 2, "두 개의 합성 대상이 로드되어야 합니다.");
         Assert(targets[0].PathKind == NetworkPathKind.Internal, "첫 대상은 내부망이어야 합니다.");
         Assert(targets[1].RequireProxy, "외부 대상은 프록시 필수여야 합니다.");
+        Assert(
+            targets[1].AllowedRedirectHosts?.Single()
+                == "cdn.example.invalid",
+            "승인 리다이렉트 호스트를 로드해야 합니다.");
+    }
+
+    private static void AllowsSameHostRedirect()
+    {
+        MeasurementTargetDefinition target =
+            CreateExternalTarget("https://example.invalid/start.bin");
+        TargetHostPolicyResult result = TargetHostPolicy.EvaluateRedirect(
+            target,
+            new Uri("https://example.invalid/next.bin"));
+
+        Assert(result.IsAllowed, "동일 호스트의 HTTPS 리다이렉트는 허용해야 합니다.");
+    }
+
+    private static void RejectsUnapprovedRedirectHost()
+    {
+        MeasurementTargetDefinition target =
+            CreateExternalTarget("https://example.invalid/start.bin");
+        TargetHostPolicyResult result = TargetHostPolicy.EvaluateRedirect(
+            target,
+            new Uri("https://other.example.invalid/next.bin"));
+
+        Assert(!result.IsAllowed, "미승인 교차 호스트 리다이렉트를 거부해야 합니다.");
+        Assert(result.ErrorCode == "REDIRECT_HOST_NOT_APPROVED",
+            "미승인 호스트 오류 코드가 필요합니다.");
+    }
+
+    private static void AllowsApprovedRedirectHost()
+    {
+        MeasurementTargetDefinition target = CreateExternalTarget(
+            "https://example.invalid/start.bin",
+            ["cdn.example.invalid"]);
+        TargetHostPolicyResult result = TargetHostPolicy.EvaluateRedirect(
+            target,
+            new Uri("https://cdn.example.invalid/next.bin"));
+
+        Assert(result.IsAllowed, "설정에 등록한 CDN 호스트는 허용해야 합니다.");
+    }
+
+    private static void RejectsNonDefaultRedirectPort()
+    {
+        MeasurementTargetDefinition target = CreateExternalTarget(
+            "https://example.invalid/start.bin",
+            ["cdn.example.invalid"]);
+        TargetHostPolicyResult result = TargetHostPolicy.EvaluateRedirect(
+            target,
+            new Uri("https://cdn.example.invalid:8443/next.bin"));
+
+        Assert(!result.IsAllowed, "승인 호스트라도 비표준 포트는 거부해야 합니다.");
+        Assert(result.ErrorCode == "REDIRECT_PORT_NOT_APPROVED",
+            "비표준 포트 오류 코드가 필요합니다.");
+    }
+
+    private static void RejectsPrivateAllowedRedirectHost()
+    {
+        MeasurementTargetDefinition target = CreateExternalTarget(
+            "https://example.invalid/start.bin",
+            ["192.168.10.10"]);
+
+        AssertContains(
+            TargetValidator.Validate(target),
+            "allowedRedirectHosts");
     }
 
     private static void DetectsProxyAuthenticationFailure()
@@ -318,7 +391,9 @@ internal static class Program
             "판단 불가 경로는 기대 여부도 판단 불가여야 합니다.");
     }
 
-    private static MeasurementTargetDefinition CreateExternalTarget(string url) =>
+    private static MeasurementTargetDefinition CreateExternalTarget(
+        string url,
+        IReadOnlyList<string>? allowedRedirectHosts = null) =>
         new(
             Name: "외부 예시",
             Url: url,
@@ -328,7 +403,8 @@ internal static class Program
             MaxBytes: 100 * 1024 * 1024,
             TimeoutSeconds: 30,
             Streams: 1,
-            MaxRedirects: 5);
+            MaxRedirects: 5,
+            AllowedRedirectHosts: allowedRedirectHosts);
 
     private static WlanSnapshot CreateConnectedWlan() =>
         new(
