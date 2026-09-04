@@ -6,14 +6,15 @@
 
 | 항목 | 현재 상태 |
 |---|---|
-| 실제 공개 최신 릴리스 | `v0.1.0-alpha.4` |
-| 다음 검증 후보 | `v0.1.0-alpha.5` |
-| alpha.5 소스 상태 | PR #38 병합 및 `main` Windows CI 성공 |
-| alpha.5 배포 상태 | 릴리스 준비 PR의 전체 CI·패키지 검사 후 발행 예정 |
-| 공개 릴리스 자산 정책 | Portable ZIP, single-file EXE, SHA256SUMS, THIRD_PARTY_NOTICES 정확히 4개 |
+| 실제 공개 최신 릴리스 | `v0.1.0-alpha.5` |
+| Release 상태 | 공개 prerelease · draft 아님 |
+| 태그 commit | `bbdad0b7ed8ffca839a83672ac1e4537bb1e29b7` |
+| 공개 자산 | Portable ZIP, single-file EXE, SHA256SUMS, THIRD_PARTY_NOTICES 정확히 4개 |
+| 게시 전 검증 | 전체 Release 빌드·모든 Smoke·감사·패키지 검사 성공 |
+| 게시 후 검증 | GitHub API의 자산 이름·크기·SHA-256 digest 확인 완료 · 재다운로드 자동 검증 추가 중 |
 | 코드 서명 | 미적용 · SHA-256과 GitHub Release 출처로 확인 |
 
-`v0.1.0-alpha.5`는 GitHub Release가 실제로 게시되고 네 자산과 SHA-256을 확인하기 전까지 공개 최신 버전으로 표기하지 않습니다.
+릴리스 링크: [`v0.1.0-alpha.5`](https://github.com/sebia1993/wlan-live-path-tester-ko/releases/tag/v0.1.0-alpha.5)
 
 ## 전체 기능 상태
 
@@ -33,6 +34,7 @@
 | WLAN과 로컬 NIC 대응 | 완료 | GUID·설명 대응 시험 | 사용자 담당 |
 | 일반·반복·인터페이스·어댑터 보고서 | 완료 | JSON·CSV·HTML·SHA-256 | 공유 전 사용자 검토 |
 | win-x64 self-contained 패키지 | 완료 | ZIP·single-file 검사 | 사용자 실행 확인 |
+| 게시된 Release 바이트 재검증 | 개발 중 | alpha.5 기준 workflow 회귀 검사 예정 | 불필요 |
 
 ## 브라우저 관찰의 현재 경계
 
@@ -84,6 +86,16 @@ Native WLAN 연결
 - 저장소·네트워크 통신 경계 감사
 - Portable ZIP·single-file EXE, PE 헤더, 금지 파일, 필수 문서와 경로 순회 검사
 
+게시 후 검증 워크플로는 다음을 추가 확인합니다.
+
+- 네 자산을 GitHub Release에서 다시 다운로드
+- 다운로드 파일 크기와 GitHub Release API `size` 일치
+- 다운로드 파일 SHA-256과 GitHub Release API `digest` 일치
+- `SHA256SUMS.txt`의 ZIP·EXE·고지 파일 해시 일치
+- 태그 commit과 Portable `BUILD_INFO.txt`의 `SourceRevision` 일치
+- Portable ZIP 필수 문서·금지 파일·경로 순회 재검사
+- Portable·single-file PE 헤더와 ProductVersion 재검사
+
 자동 HTTP 시험은 `127.0.0.1` 합성 서버와 합성 프록시만 사용합니다. GitHub Actions는 실제 외부 사이트, 회사 프록시, PAC/WPAD 또는 사내 서버에 접속하지 않습니다.
 
 ## 사용자가 실제 환경에서 확인할 범위
@@ -109,32 +121,29 @@ Native WLAN 연결
 
 ### P0
 
-1. **alpha.5 릴리스 준비 PR 전체 검증과 병합**
-   - Windows CI·ObservationSmoke·Local Report CI·Release Package CI
-   - Portable ZIP 필수 운영 문서와 네 자산 정책 검증
-2. **실제 `v0.1.0-alpha.5` 발행 및 재검증**
-   - 병합된 `main`에서 태그와 Release 생성
-   - 네 자산 이름·크기·prerelease 상태 확인
-   - `SHA256SUMS.txt`와 게시 자산 해시 재확인
+1. **게시된 Release 재다운로드 검증 자동화 병합 및 alpha.5 실행**
+   - GitHub digest·SHA256SUMS·파일 크기·ZIP·BUILD_INFO·ProductVersion 확인
+   - 향후 `release.published` 이벤트에서 자동 실행
+   - 실패한 공개 Release는 덮어쓰지 않고 새 수정 버전으로 교체
 
 ### P1
 
-3. **비동기 WinHTTP 전송 계층**
+2. **비동기 WinHTTP 전송 계층**
    - `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반으로 전환
    - 연결·응답·본문 수신 중 안전한 즉시 취소
    - 실제 회사 프록시의 407 재인증과 취소 경쟁 검증
-4. **목적지별 Windows 라우팅 근거**
+3. **목적지별 Windows 라우팅 근거**
    - 실제 대상 또는 프록시 목적지의 route/interface metric을 로컬에서 판정
    - IP·게이트웨이 원문을 보고서에 노출하지 않는 구조화 요약
-5. **장시간·상태 전환 안정성**
+4. **장시간·상태 전환 안정성**
    - 절전·재연결, USB NIC 제거, VPN 연결·해제와 가상 NIC 생성·삭제
    - 장시간 반복 측정과 브라우저 관찰 중 이벤트 경쟁
 
 ### P2
 
-6. **Authenticode 코드 서명**
+5. **Authenticode 코드 서명**
    - 인증서·타임스탬프 확보 후 빌드 서명과 CI 검증
-7. **실환경 결과 기반 호환성 수정**
+6. **실환경 결과 기반 호환성 수정**
    - WLAN 드라이버, PAC/WPAD, 407, TLS 검사와 GPO·EDR 차이 반영
-8. **정식 `v0.1.0` 전환**
+7. **정식 `v0.1.0` 전환**
    - 실제 Aruba WLAN·회사 프록시·다중 NIC·보고서 마스킹 검증 완료 후 진행
