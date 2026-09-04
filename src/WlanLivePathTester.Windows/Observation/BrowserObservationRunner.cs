@@ -25,7 +25,8 @@ public sealed class BrowserObservationRunner
     public Task<BrowserObservationResult> RunAsync(
         BrowserObservationOptions options,
         IProgress<BrowserObservationProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        BrowserObservationCancellationContext? cancellationContext = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (!_runtime.RequiresWorkerThread)
@@ -33,18 +34,24 @@ public sealed class BrowserObservationRunner
             return RunCoreAsync(
                 options,
                 progress,
-                cancellationToken);
+                cancellationToken,
+                cancellationContext);
         }
 
         return Task.Run(
-            () => RunCoreAsync(options, progress, cancellationToken),
+            () => RunCoreAsync(
+                options,
+                progress,
+                cancellationToken,
+                cancellationContext),
             CancellationToken.None);
     }
 
     private async Task<BrowserObservationResult> RunCoreAsync(
         BrowserObservationOptions options,
         IProgress<BrowserObservationProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        BrowserObservationCancellationContext? cancellationContext)
     {
         IReadOnlyList<string> validationErrors = options.Validate();
         if (validationErrors.Count > 0)
@@ -343,18 +350,25 @@ public sealed class BrowserObservationRunner
                         startedAt,
                         canceledAt,
                         samples);
+            BrowserObservationTerminationReason cancellationReason =
+                cancellationContext?.ResolveCancellationReason()
+                ?? BrowserObservationTerminationReason.CanceledByUser;
+            string cancellationMessage = cancellationReason
+                == BrowserObservationTerminationReason.SystemSuspend
+                    ? "시스템 절전 또는 최대 절전 전환으로 브라우저 관찰을 중단했습니다. 전원 전환 전후의 Wi-Fi 카운터를 한 결과에 결합하지 않습니다."
+                    : "사용자 요청으로 브라우저 관찰을 중단했습니다. 수집된 샘플만 로컬 결과에 유지합니다.";
             progress?.Report(new BrowserObservationProgress(
                 BrowserObservationPhase.Canceled,
                 canceledAt - startedAt,
                 TimeSpan.Zero,
                 samples.Count == 0 ? null : samples[^1],
-                "사용자 요청으로 브라우저 관찰을 중단했습니다."));
+                cancellationMessage));
             return new BrowserObservationResult(
                 BrowserObservationStatus.Canceled,
                 canceledSummary,
                 initialWlan,
-                "사용자 요청으로 브라우저 관찰을 중단했습니다. 수집된 샘플만 로컬 결과에 유지합니다.",
-                BrowserObservationTerminationReason.CanceledByUser);
+                cancellationMessage,
+                cancellationReason);
         }
         catch (Exception exception)
         {

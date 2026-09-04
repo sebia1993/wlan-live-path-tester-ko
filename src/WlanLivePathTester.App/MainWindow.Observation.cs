@@ -10,6 +10,8 @@ namespace WlanLivePathTester.App;
 public partial class MainWindow
 {
     private readonly BrowserObservationRunner _browserObservationRunner = new();
+    private readonly BrowserObservationCancellationContext
+        _observationCancellationContext = new();
     private CancellationTokenSource? _observationCancellation;
     private BrowserObservationResult? _lastBrowserObservationResult;
     private TextBox? _observationDurationTextBox;
@@ -44,9 +46,11 @@ public partial class MainWindow
 
     private void OnObservationHostClosed(object? sender, EventArgs e)
     {
-        _observationCancellation?.Cancel();
-        _observationCancellation?.Dispose();
-        _observationCancellation = null;
+        if (_observationCancellation is not null)
+        {
+            _observationCancellationContext.RequestUserCancellation();
+            _observationCancellation.Cancel();
+        }
     }
 
     private TabItem CreateObservationTab()
@@ -141,7 +145,7 @@ public partial class MainWindow
             Child = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
-                Text = "사용 순서: 관찰 시작 → 3초 기준 수집 완료 안내 확인 → 브라우저에서 다운로드 시작. 관찰 중 물리 Wi-Fi가 바뀌거나 고정 카운터를 읽지 못하면 다른 NIC로 전환하지 않고 별도 상태로 종료합니다."
+                Text = "사용 순서: 관찰 시작 → 3초 기준 수집 완료 안내 확인 → 브라우저에서 다운로드 시작. 관찰 중 물리 Wi-Fi가 바뀌거나 고정 카운터를 읽지 못하면 다른 NIC로 전환하지 않고 별도 상태로 종료합니다. 절전·최대 절전 전환 시에는 전원 전환 전후 카운터를 결합하지 않고 SystemSuspend로 중단합니다."
             }
         });
         content.Children.Add(durationRow);
@@ -198,7 +202,10 @@ public partial class MainWindow
             ObservationSeconds: durationSeconds,
             SampleIntervalMilliseconds: 1000);
 
-        _observationCancellation = new CancellationTokenSource();
+        _observationCancellationContext.Reset();
+        _observationPowerTransitionState.BeginObservation();
+        CancellationTokenSource activeCancellation = new();
+        _observationCancellation = activeCancellation;
         SetObservationRunningState(isRunning: true);
         SetObservationResult(
             "관찰 준비 중입니다. 물리 Wi-Fi를 하나로 고정한 뒤 3초 동안 백그라운드 트래픽 기준치를 수집합니다. 기준 수집 완료 안내 후 브라우저 다운로드를 시작하십시오.");
@@ -209,7 +216,8 @@ public partial class MainWindow
             BrowserObservationResult result = await _browserObservationRunner.RunAsync(
                 options,
                 progress,
-                _observationCancellation.Token);
+                activeCancellation.Token,
+                _observationCancellationContext);
             _lastBrowserObservationResult = result;
             SetObservationResult(FormatObservationResult(result));
         }
@@ -219,15 +227,29 @@ public partial class MainWindow
         }
         finally
         {
-            _observationCancellation.Dispose();
-            _observationCancellation = null;
+            if (ReferenceEquals(_observationCancellation, activeCancellation))
+            {
+                _observationCancellation = null;
+            }
+
+            activeCancellation.Dispose();
+            _ = _observationPowerTransitionState.CompleteObservation();
             SetObservationRunningState(isRunning: false);
+            TryRefreshAdaptersAfterPowerResume();
         }
     }
 
     private void OnStopObservationClick(object sender, RoutedEventArgs e)
     {
-        _observationCancellation?.Cancel();
+        CancellationTokenSource? activeCancellation =
+            _observationCancellation;
+        if (activeCancellation is null)
+        {
+            return;
+        }
+
+        _observationCancellationContext.RequestUserCancellation();
+        activeCancellation.Cancel();
         SetObservationResult("관찰 중지 요청을 처리하고 있습니다.");
     }
 
@@ -264,7 +286,7 @@ public partial class MainWindow
     private static string FormatObservationResult(BrowserObservationResult result)
     {
         StringBuilder builder = new();
-        builder.AppendLine($"상태: {FormatObservationStatus(result.Status)}");
+        builder.AppendLine($"상태: {FormatObservationStatus(result)}");
         builder.AppendLine(result.Message);
 
         BrowserObservationSummary? summary = result.Summary;
@@ -313,8 +335,25 @@ public partial class MainWindow
         }
     }
 
-    private static string FormatObservationStatus(BrowserObservationStatus status) =>
-        status switch
+    private static string FormatObservationStatus(
+        BrowserObservationResult result)
+    {
+        BrowserObservationTerminationReason reason =
+            result.EffectiveTerminationReason;
+        if (reason == BrowserObservationTerminationReason.SystemSuspend)
+        {
+            return "시스템 절전으로 중단";
+        }
+
+        if (reason
+            == BrowserObservationTerminationReason.TimingDiscontinuity)
+        {
+            return result.Summary is null
+                ? "샘플 시간 연속성 중단"
+                : "샘플 시간 연속성 중단 · 일부 결과 보존";
+        }
+
+        return result.Status switch
         {
             BrowserObservationStatus.Success => "완료",
             BrowserObservationStatus.PartialSuccess => "일부 완료",
@@ -328,6 +367,7 @@ public partial class MainWindow
             BrowserObservationStatus.InvalidOptions => "설정 오류",
             _ => "실패"
         };
+    }
 
     private static string FormatNullableMbps(double? value) =>
         value is double mbps ? $"{mbps:F1} Mbps" : "계산 불가";
