@@ -39,6 +39,15 @@ public enum DestinationRouteEvidenceStatus
     Failed
 }
 
+public enum RouteWlanCorrelationStatus
+{
+    NotEvaluated,
+    Matched,
+    DifferentInterface,
+    WlanIdentityUnavailable,
+    RouteInterfaceUnavailable
+}
+
 public sealed record RouteInterfaceDescriptor(
     string InterfaceIdentity,
     string DisplayName,
@@ -74,7 +83,11 @@ public sealed record DestinationRouteEvidence(
     RouteInterfaceDescriptor? SelectedInterface,
     IReadOnlyList<RouteAddressEvidence> AddressEvidence,
     IReadOnlyList<string> Warnings,
-    string Message)
+    string Message,
+    RouteWlanCorrelationStatus WlanCorrelationStatus =
+        RouteWlanCorrelationStatus.NotEvaluated,
+    string? ExpectedWlanInterfaceFingerprint = null,
+    string? WlanCorrelationMessage = null)
 {
     public bool IsSuccess =>
         Status is DestinationRouteEvidenceStatus.Success
