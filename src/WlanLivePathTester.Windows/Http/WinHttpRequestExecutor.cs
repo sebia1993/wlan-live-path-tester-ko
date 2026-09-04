@@ -952,7 +952,8 @@ public static class WinHttpRequestExecutor
             return false;
         }
 
-        if (!string.IsNullOrEmpty(parsed.UserInfo))n        {
+        if (!string.IsNullOrEmpty(parsed.UserInfo))
+        {
             message = "URL에 사용자 이름이나 비밀번호를 포함할 수 없습니다.";
             return false;
         }
