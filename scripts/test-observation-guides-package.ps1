@@ -29,27 +29,36 @@ $requiredEntries = @(
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedZip)
 try {
-    $entryNames = @($archive.Entries |
-        ForEach-Object { $_.FullName.Replace('\', '/') })
+    $entriesByNormalizedName = @{}
+    foreach ($entry in $archive.Entries) {
+        $normalizedName = $entry.FullName.Replace('\', '/')
+        if ($entriesByNormalizedName.ContainsKey($normalizedName)) {
+            throw "Portable ZIP contains duplicate entry: $normalizedName"
+        }
+
+        $entriesByNormalizedName[$normalizedName] = $entry
+    }
 
     foreach ($requiredEntry in $requiredEntries) {
-        if ($entryNames -notcontains $requiredEntry) {
+        if (-not $entriesByNormalizedName.ContainsKey($requiredEntry)) {
             throw "Portable ZIP is missing observation guide: $requiredEntry"
         }
 
-        $entry = $archive.GetEntry($requiredEntry)
-        if ($null -eq $entry -or $entry.Length -le 0) {
+        $entry = $entriesByNormalizedName[$requiredEntry]
+        if ($entry.Length -le 0) {
             throw "Observation guide is empty in Portable ZIP: $requiredEntry"
         }
     }
 
-    $duplicates = @($entryNames |
-        Where-Object { $_ -like 'docs/*OBSERVATION*' -or $_ -eq 'docs/WLAN_IDENTITY_CONTINUITY.md' } |
-        Group-Object |
-        Where-Object { $_.Count -gt 1 })
-    if ($duplicates.Count -gt 0) {
-        $names = @($duplicates | ForEach-Object { $_.Name })
-        throw "Portable ZIP contains duplicate observation guides: $($names -join ', ')"
+    $observationGuideNames = @($entriesByNormalizedName.Keys |
+        Where-Object {
+            $_ -like 'docs/*OBSERVATION*'
+            -or $_ -eq 'docs/WLAN_IDENTITY_CONTINUITY.md'
+        })
+    $missingNormalizedSeparators = @($observationGuideNames |
+        Where-Object { $_.Contains('\') })
+    if ($missingNormalizedSeparators.Count -gt 0) {
+        throw "Observation guide names were not normalized: $($missingNormalizedSeparators -join ', ')"
     }
 
     Write-Host "Observation guide package validation passed: $($requiredEntries.Count) guides" -ForegroundColor Green
