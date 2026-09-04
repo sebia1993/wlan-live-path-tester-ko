@@ -109,7 +109,14 @@ public sealed record ReportObservationSection(
     string Confidence,
     string Message,
     string Limitation,
-    IReadOnlyList<ReportObservationSample> Samples);
+    IReadOnlyList<ReportObservationSample> Samples)
+{
+    public string? TerminationReason
+    {
+        get;
+        init;
+    }
+}
 
 public sealed record ReportObservationSample(
     DateTimeOffset Timestamp,
@@ -255,6 +262,19 @@ public static class ReportObservationMapper
             .ToArray()
             ?? Array.Empty<ReportObservationSample>();
 
+        BrowserObservationTerminationReason terminationReason =
+            result.EffectiveTerminationReason;
+        string? terminationReasonValue = terminationReason
+            == BrowserObservationTerminationReason.None
+                ? null
+                : terminationReason.ToString();
+        string redactedMessage =
+            SensitiveDataRedactor.RedactText(result.Message)
+            ?? string.Empty;
+        string reportMessage = AppendTerminationDisplay(
+            redactedMessage,
+            terminationReason);
+
         return new ReportObservationSection(
             Status: result.Status.ToString(),
             StartedAt: summary?.StartedAt,
@@ -272,10 +292,34 @@ public static class ReportObservationMapper
             CounterResetCount: summary?.CounterResetCount,
             WlanDisconnectedSampleCount: summary?.WlanDisconnectedSampleCount,
             Confidence: summary?.Confidence.ToString() ?? "Unknown",
-            Message: SensitiveDataRedactor.RedactText(result.Message) ?? string.Empty,
+            Message: reportMessage,
             Limitation: SensitiveDataRedactor.RedactText(summary?.Limitation)
                 ?? "Wi-Fi 인터페이스 전체 트래픽이므로 다른 프로그램의 통신이 포함될 수 있습니다.",
-            Samples: samples);
+            Samples: samples)
+        {
+            TerminationReason = terminationReasonValue
+        };
+    }
+
+    private static string AppendTerminationDisplay(
+        string message,
+        BrowserObservationTerminationReason reason)
+    {
+        if (reason == BrowserObservationTerminationReason.None)
+        {
+            return message;
+        }
+
+        string termination =
+            $"종료 원인: {BrowserObservationTerminationPolicy.ToDisplayText(reason)} ({reason})";
+        if (message.Contains(termination, StringComparison.Ordinal))
+        {
+            return message;
+        }
+
+        return string.IsNullOrWhiteSpace(message)
+            ? termination
+            : message.TrimEnd() + " " + termination;
     }
 
     private static double? ToMbps(ulong? bitsPerSecond) =>
