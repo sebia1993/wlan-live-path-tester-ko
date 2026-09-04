@@ -1,16 +1,18 @@
 using System.Net.NetworkInformation;
-using System.Runtime.Versioning;
+using System.Runtime.VersionServices;
 using WlanLivePathTester.Core.NetworkEnvironment;
 using WlanLivePathTester.Core.Observation;
 
 namespace WlanLivePathTester.Windows.Observation;
 
-[SupportedOSPlatform("windows")]
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public static class WindowsInterfaceCounterReader
 {
     public static InterfaceCounterReadResult ReadCurrent(
         string? preferredInterfaceId = null,
-        string? preferredInterfaceDescription = null)
+        string? preferredInterfaceDescription = null,
+        InterfaceCounterSelectionMode selectionMode =
+            InterfaceCounterSelectionMode.PreferExactIdentityThenDescription)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -51,7 +53,8 @@ public static class WindowsInterfaceCounterReader
                 InterfaceCounterSelectionPolicy.Select(
                     candidates,
                     preferredInterfaceId,
-                    preferredInterfaceDescription);
+                    preferredInterfaceDescription,
+                    selectionMode);
 
             if (!selection.IsSelected
                 || !selection.SelectedCandidateIndex.HasValue)
@@ -88,12 +91,36 @@ public static class WindowsInterfaceCounterReader
                     "선택 정책이 물리 Wi-Fi 후보가 아닌 인터페이스를 반환해 카운터를 읽지 않았습니다.");
             }
 
+            string selectedInterfaceId =
+                ObservationInterfaceBindingPolicy.NormalizeInterfaceId(
+                    selected.Id);
+            if (string.IsNullOrWhiteSpace(selectedInterfaceId))
+            {
+                return new InterfaceCounterReadResult(
+                    InterfaceCounterReadStatus.CounterProviderMismatch,
+                    null,
+                    "선택된 Wi-Fi 인터페이스의 ID를 정규화하지 못해 카운터를 읽지 않았습니다.");
+            }
+
+            if (selectionMode
+                    == InterfaceCounterSelectionMode.RequireExactInterfaceId
+                && !selectedInterfaceId.Equals(
+                    ObservationInterfaceBindingPolicy.NormalizeInterfaceId(
+                        preferredInterfaceId),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return new InterfaceCounterReadResult(
+                    InterfaceCounterReadStatus.CounterProviderMismatch,
+                    null,
+                    "카운터 공급자가 시작 시 고정한 Wi-Fi와 다른 인터페이스를 선택해 결과를 거부했습니다.");
+            }
+
             IPInterfaceStatistics statistics = selected.GetIPStatistics();
             return new InterfaceCounterReadResult(
                 InterfaceCounterReadStatus.Success,
                 new InterfaceCounterSnapshot(
                     Timestamp: DateTimeOffset.UtcNow,
-                    InterfaceId: NormalizeInterfaceId(selected.Id),
+                    InterfaceId: selectedInterfaceId,
                     InterfaceName: selected.Name,
                     InterfaceDescription: selected.Description,
                     BytesReceived: statistics.BytesReceived,
@@ -138,12 +165,4 @@ public static class WindowsInterfaceCounterReader
                 InterfaceCounterReadStatus.InterfaceAmbiguous,
             _ => InterfaceCounterReadStatus.InterfaceNotFound
         };
-
-    private static string NormalizeInterfaceId(string value)
-    {
-        string trimmed = value.Trim().Trim('{', '}');
-        return Guid.TryParse(trimmed, out Guid parsed)
-            ? parsed.ToString("D")
-            : trimmed;
-    }
 }
