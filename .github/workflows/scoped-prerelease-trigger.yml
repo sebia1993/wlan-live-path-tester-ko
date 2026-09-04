@@ -36,8 +36,13 @@ jobs:
 
               $prefix = 'release-trigger/'
               $suffix = '-dispatch'
-              if (-not $Branch.StartsWith($prefix, [StringComparison]::Ordinal)
-                  -or -not $Branch.EndsWith($suffix, [StringComparison]::Ordinal)) {
+              $hasPrefix = $Branch.StartsWith(
+                  $prefix,
+                  [StringComparison]::Ordinal)
+              $hasSuffix = $Branch.EndsWith(
+                  $suffix,
+                  [StringComparison]::Ordinal)
+              if (-not $hasPrefix -or -not $hasSuffix) {
                   throw "Invalid release trigger branch boundary: $Branch"
               }
 
@@ -59,9 +64,12 @@ jobs:
               $version = $match.Groups['version'].Value
               $prerelease = $version.Substring($version.IndexOf('-') + 1)
               foreach ($identifier in $prerelease.Split('.')) {
-                  if ($identifier -match '^\d+$'
-                      -and $identifier.Length -gt 1
-                      -and $identifier.StartsWith('0', [StringComparison]::Ordinal)) {
+                  $isNumeric = $identifier -match '^\d+$'
+                  $hasLeadingZero = $identifier.Length -gt 1 `
+                      -and $identifier.StartsWith(
+                          '0',
+                          [StringComparison]::Ordinal)
+                  if ($isNumeric -and $hasLeadingZero) {
                       throw "Numeric prerelease identifiers cannot contain leading zeroes: $Branch"
                   }
               }
@@ -125,8 +133,13 @@ jobs:
           $branch = $env:GITHUB_REF_NAME.Trim()
           $prefix = 'release-trigger/'
           $suffix = '-dispatch'
-          if (-not $branch.StartsWith($prefix, [StringComparison]::Ordinal)
-              -or -not $branch.EndsWith($suffix, [StringComparison]::Ordinal)) {
+          $hasPrefix = $branch.StartsWith(
+              $prefix,
+              [StringComparison]::Ordinal)
+          $hasSuffix = $branch.EndsWith(
+              $suffix,
+              [StringComparison]::Ordinal)
+          if (-not $hasPrefix -or -not $hasSuffix) {
               throw "Invalid release trigger branch boundary: $branch"
           }
 
@@ -148,9 +161,12 @@ jobs:
           $version = $match.Groups['version'].Value
           $prerelease = $version.Substring($version.IndexOf('-') + 1)
           foreach ($identifier in $prerelease.Split('.')) {
-              if ($identifier -match '^\d+$'
-                  -and $identifier.Length -gt 1
-                  -and $identifier.StartsWith('0', [StringComparison]::Ordinal)) {
+              $isNumeric = $identifier -match '^\d+$'
+              $hasLeadingZero = $identifier.Length -gt 1 `
+                  -and $identifier.StartsWith(
+                      '0',
+                      [StringComparison]::Ordinal)
+              if ($isNumeric -and $hasLeadingZero) {
                   throw "Numeric prerelease identifiers cannot contain leading zeroes: $branch"
               }
           }
