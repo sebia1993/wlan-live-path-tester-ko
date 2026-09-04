@@ -50,6 +50,9 @@ jobs:
       - name: Run download measurement smoke test
         run: dotnet run --project .\tests\WlanLivePathTester.MeasurementSmoke\WlanLivePathTester.MeasurementSmoke.csproj -c Release --no-build
 
+      - name: Run browser observation smoke test
+        run: dotnet run --project .\tests\WlanLivePathTester.ObservationSmoke\WlanLivePathTester.ObservationSmoke.csproj -c Release --no-build
+
       - name: Audit repository
         shell: powershell
         run: .\scripts\audit-repository.ps1
