@@ -1,0 +1,246 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish, for example v0.1.0-alpha.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build-verify-publish
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate tag and derive version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:REQUESTED_TAG.Trim()
+          $pattern = '^v(?<version>(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$'
+          if ($tag -notmatch $pattern) {
+              throw "Invalid release tag: $tag"
+          }
+
+          $version = $Matches['version']
+          $isPrerelease = $version.Contains('-')
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_IS_PRERELEASE=$($isPrerelease.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Tag=$tag Version=$version Prerelease=$isPrerelease"
+
+      - name: Verify source and all smoke tests
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\verify-release.ps1
+          -Configuration Release
+
+      - name: Build release assets
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\build-release.ps1
+          -Version $env:RELEASE_VERSION
+          -OutputRoot .\artifacts\release
+
+      - name: Validate release assets
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\test-release-package.ps1
+          -Version $env:RELEASE_VERSION
+          -OutputRoot .\artifacts\release
+
+      - name: Create release notes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $kind = if ($env:RELEASE_IS_PRERELEASE -eq 'true') {
+              '사전 릴리스'
+          }
+          else {
+              '정식 릴리스'
+          }
+
+          $notes = @"
+          ## WLAN Live Path Tester KO $env:RELEASE_TAG
+
+          이 버전은 Windows 11 x64용 $kind 입니다.
+
+          ### 배포물
+
+          - `WlanLivePathTester-win-x64-portable.zip`: 호환성을 우선하는 권장 배포물
+          - `WlanLivePathTester-win-x64-single-file.exe`: 간편 실행용 단일 파일
+          - `SHA256SUMS.txt`: ZIP·EXE·제3자 고지의 SHA-256
+          - `THIRD_PARTY_NOTICES.md`: 제3자 구성요소 고지
+
+          두 실행 형태 모두 .NET 런타임을 포함하므로 Python 또는 별도 .NET 설치가 필요하지 않습니다. 관리자 권한도 요구하지 않습니다.
+
+          ### 자동 검증
+
+          - 전체 Release 빌드
+          - Core·WLAN·프록시 인증·내부/외부 다운로드·브라우저 관찰·보고서 smoke test
+          - 저장소 및 네트워크 통신 경계 감사
+          - Portable ZIP 및 single-file 패키지 구조 검사
+          - 금지 파일·로컬 설정·경로 순회 검사
+          - SHA-256 재계산 검증
+
+          ### 실제 환경 검증
+
+          회사의 실제 WLAN, 고정 프록시·PAC·WPAD, Negotiate/NTLM, GPO·EDR와 승인 측정 URL 검증은 사용자가 `docs/RELEASE_VALIDATION.md`에 따라 수행해야 합니다.
+
+          ### 서명 안내
+
+          현재 배포물은 상용 Authenticode 인증서로 서명하지 않았습니다. 실행 전 Release 출처와 `SHA256SUMS.txt`를 확인하고 회사 보안 정책을 따르십시오. 보안 제품을 우회하거나 비활성화하지 마십시오.
+
+          ### 데이터 경계
+
+          AI·텔레메트리·자동 업데이트·결과 업로드가 없습니다. 외부 측정은 사용자가 명시적으로 실행한 HEAD/GET만 사용합니다.
+          "@
+
+          $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
+          "RELEASE_NOTES_PATH=$notesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Ensure release does not already exist
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          $viewExitCode = $LASTEXITCODE
+          if ($viewExitCode -eq 0) {
+              throw "GitHub Release already exists for $env:RELEASE_TAG. Existing releases are not overwritten."
+          }
+          if ($viewExitCode -ne 1) {
+              throw "Unable to determine whether the Release exists. gh exit code: $viewExitCode"
+          }
+
+      - name: Create verified draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $assets = @(
+              '.\artifacts\release\WlanLivePathTester-win-x64-portable.zip',
+              '.\artifacts\release\WlanLivePathTester-win-x64-single-file.exe',
+              '.\artifacts\release\SHA256SUMS.txt',
+              '.\artifacts\release\THIRD_PARTY_NOTICES.md'
+          )
+
+          $arguments = @(
+              'release', 'create', $env:RELEASE_TAG,
+              '--repo', $env:GITHUB_REPOSITORY,
+              '--verify-tag',
+              '--draft',
+              '--title', "WLAN Live Path Tester KO $env:RELEASE_TAG",
+              '--notes-file', $env:RELEASE_NOTES_PATH
+          )
+          if ($env:RELEASE_IS_PRERELEASE -eq 'true') {
+              $arguments += '--prerelease'
+          }
+          $arguments += $assets
+
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+              throw "Draft GitHub Release creation failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Verify draft asset inventory
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $json = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,isDraft,isPrerelease,assets
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Unable to read the newly created draft Release.'
+          }
+
+          $release = $json | ConvertFrom-Json
+          if (-not $release.isDraft) {
+              throw 'Release must remain a draft until asset verification completes.'
+          }
+
+          $names = @($release.assets | ForEach-Object { $_.name } | Sort-Object)
+          $expected = @(
+              'SHA256SUMS.txt',
+              'THIRD_PARTY_NOTICES.md',
+              'WlanLivePathTester-win-x64-portable.zip',
+              'WlanLivePathTester-win-x64-single-file.exe'
+          ) | Sort-Object
+
+          if (($names -join '|') -ne ($expected -join '|')) {
+              throw "Unexpected draft assets: $($names -join ', ')"
+          }
+
+      - name: Publish verified release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false
+          if ($LASTEXITCODE -ne 0) {
+              throw "Publishing the verified draft failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Verify published release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $json = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,isDraft,isPrerelease,assets,url
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Unable to read the published GitHub Release.'
+          }
+
+          $release = $json | ConvertFrom-Json
+          if ($release.isDraft) {
+              throw 'Release is still a draft after publication.'
+          }
+
+          $names = @($release.assets | ForEach-Object { $_.name } | Sort-Object)
+          $expected = @(
+              'SHA256SUMS.txt',
+              'THIRD_PARTY_NOTICES.md',
+              'WlanLivePathTester-win-x64-portable.zip',
+              'WlanLivePathTester-win-x64-single-file.exe'
+          ) | Sort-Object
+          if (($names -join '|') -ne ($expected -join '|')) {
+              throw "Unexpected published assets: $($names -join ', ')"
+          }
+
+          Write-Host "Published and verified $($release.url)" -ForegroundColor Green
