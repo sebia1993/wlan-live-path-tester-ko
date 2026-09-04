@@ -1,0 +1,8 @@
+WLAN Live Path Tester KO
+
+1. ZIP 파일을 먼저 완전히 압축 해제하십시오.
+2. WlanLivePathTester.exe를 실행하십시오.
+3. Python 또는 별도 .NET 설치와 관리자 권한은 필요하지 않습니다.
+4. 프로그램 시작만으로 외부 측정 요청을 만들지 않습니다.
+5. 실제 회사 환경 검증 방법은 docs\RELEASE_VALIDATION.md를 확인하십시오.
+6. 회사 밖으로 보고서를 공유하기 전에 마스킹 내용을 직접 재검토하십시오.
