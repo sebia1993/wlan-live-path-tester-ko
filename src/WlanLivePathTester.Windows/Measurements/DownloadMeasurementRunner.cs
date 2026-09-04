@@ -10,16 +10,18 @@ namespace WlanLivePathTester.Windows.Measurements;
 [SupportedOSPlatform("windows")]
 public static class DownloadMeasurementRunner
 {
-    public static Task<DownloadMeasurementResult> RunAsync(
+    public static async Task<DownloadMeasurementResult> RunAsync(
         MeasurementTargetDefinition target,
         bool performHeadPreflight = true,
         CancellationToken cancellationToken = default)
     {
-        return RunCoreAsync(
+        DownloadMeasurementResult result = await RunCoreAsync(
             target,
             WinHttpRequestExecutor.Execute,
             performHeadPreflight,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+        MeasurementResultHistory.Add(result);
+        return result;
     }
 
     public static async Task<IReadOnlyList<DownloadMeasurementResult>> RunManyAsync(
@@ -34,7 +36,9 @@ public static class DownloadMeasurementRunner
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                results.Add(CreateCanceled(target));
+                DownloadMeasurementResult canceled = CreateCanceled(target);
+                MeasurementResultHistory.Add(canceled);
+                results.Add(canceled);
                 break;
             }
 
@@ -306,6 +310,23 @@ public static class DownloadMeasurementRunner
                         Status = WinHttpRequestStatus.RedirectDenied,
                         ErrorCode = validation.ErrorCode,
                         Message = validation.Message
+                    },
+                    current,
+                    redirects);
+            }
+
+            TargetHostPolicyResult hostPolicy =
+                TargetHostPolicy.EvaluateRedirect(
+                    target,
+                    validation.Destination);
+            if (!hostPolicy.IsAllowed)
+            {
+                return new RequestChainResult(
+                    response with
+                    {
+                        Status = WinHttpRequestStatus.RedirectDenied,
+                        ErrorCode = hostPolicy.ErrorCode,
+                        Message = hostPolicy.Message
                     },
                     current,
                     redirects);
