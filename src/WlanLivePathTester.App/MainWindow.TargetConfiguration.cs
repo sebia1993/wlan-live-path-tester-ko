@@ -53,38 +53,51 @@ public partial class MainWindow
             return;
         }
 
-        _approvedTargetStatusText = new TextBlock
+        TextBlock statusText = new()
         {
             Foreground = new SolidColorBrush(Color.FromRgb(86, 101, 115)),
             TextWrapping = TextWrapping.Wrap,
             Text = "로컬 승인 대상 설정을 확인하고 있습니다."
         };
+        _approvedTargetStatusText = statusText;
 
-        _reloadApprovedTargetsButton = new Button
+        Button reloadButton = new()
         {
             Content = "승인 대상 다시 불러오기",
             MinWidth = 170,
             Padding = new Thickness(10, 6, 10, 6),
             HorizontalAlignment = HorizontalAlignment.Left
         };
-        _reloadApprovedTargetsButton.Click += OnReloadApprovedTargetsClick;
+        reloadButton.Click += OnReloadApprovedTargetsClick;
+        _reloadApprovedTargetsButton = reloadButton;
 
-        _manualTargetEntryCheckBox = new CheckBox
+        CheckBox manualEntryCheckBox = new()
         {
             Margin = new Thickness(14, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Content = "승인 목록을 무시하고 임의 URL 직접 입력(고급)"
         };
-        _manualTargetEntryCheckBox.Checked += OnManualTargetEntryChanged;
-        _manualTargetEntryCheckBox.Unchecked += OnManualTargetEntryChanged;
+        manualEntryCheckBox.Checked += OnManualTargetEntryChanged;
+        manualEntryCheckBox.Unchecked += OnManualTargetEntryChanged;
+        _manualTargetEntryCheckBox = manualEntryCheckBox;
 
         StackPanel actions = new()
         {
             Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, 11, 0, 0)
         };
-        actions.Children.Add(_reloadApprovedTargetsButton);
-        actions.Children.Add(_manualTargetEntryCheckBox);
+        actions.Children.Add(reloadButton);
+        actions.Children.Add(manualEntryCheckBox);
+
+        StackPanel panelContent = new();
+        panelContent.Children.Add(new TextBlock
+        {
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(31, 97, 141)),
+            Text = "로컬 승인 측정 대상"
+        });
+        panelContent.Children.Add(statusText);
+        panelContent.Children.Add(actions);
 
         Border panel = new()
         {
@@ -94,20 +107,7 @@ public partial class MainWindow
             Background = new SolidColorBrush(Color.FromRgb(234, 242, 248)),
             BorderBrush = new SolidColorBrush(Color.FromRgb(93, 173, 226)),
             BorderThickness = new Thickness(1),
-            Child = new StackPanel
-            {
-                Children =
-                {
-                    new TextBlock
-                    {
-                        FontWeight = FontWeights.SemiBold,
-                        Foreground = new SolidColorBrush(Color.FromRgb(31, 97, 141)),
-                        Text = "로컬 승인 측정 대상"
-                    },
-                    _approvedTargetStatusText,
-                    actions
-                }
-            }
+            Child = panelContent
         };
 
         int insertionIndex = Math.Min(1, stackPanel.Children.Count);
@@ -149,6 +149,7 @@ public partial class MainWindow
     private void LoadApprovedTargetConfiguration()
     {
         _approvedTargets.Clear();
+        ApprovedTargetRuntimeCatalog.Clear();
         _approvedTargetConfigurationPath = FindApprovedTargetConfiguration();
 
         if (_approvedTargetConfigurationPath is null)
@@ -234,6 +235,7 @@ public partial class MainWindow
         catch (Exception exception)
         {
             _approvedTargets.Clear();
+            ApprovedTargetRuntimeCatalog.Clear();
             if (_manualTargetEntryCheckBox is not null)
             {
                 _manualTargetEntryCheckBox.IsChecked = true;
@@ -250,6 +252,15 @@ public partial class MainWindow
     {
         bool manualMode = _manualTargetEntryCheckBox?.IsChecked == true
             || _approvedTargets.Count == 0;
+
+        if (manualMode)
+        {
+            ApprovedTargetRuntimeCatalog.Clear();
+        }
+        else
+        {
+            ApprovedTargetRuntimeCatalog.Replace(_approvedTargets);
+        }
 
         InternalTargetUrlTextBox.IsReadOnly = !manualMode;
         ExternalTargetUrlsTextBox.IsReadOnly = !manualMode;
