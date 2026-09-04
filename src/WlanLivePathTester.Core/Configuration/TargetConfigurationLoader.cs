@@ -62,7 +62,8 @@ public static class TargetConfigurationLoader
         HashSet<string> targetKeys = new(StringComparer.OrdinalIgnoreCase);
         foreach (MeasurementTargetDefinition target in targets)
         {
-            IReadOnlyList<string> errors = TargetValidator.Validate(target);
+            IReadOnlyList<string> errors =
+                TargetValidator.ValidateDefinition(target);
             if (errors.Count > 0)
             {
                 throw new InvalidDataException(
