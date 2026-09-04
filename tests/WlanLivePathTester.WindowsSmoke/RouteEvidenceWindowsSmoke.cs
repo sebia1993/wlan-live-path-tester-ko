@@ -61,12 +61,16 @@ internal static class RouteEvidenceWindowsSmoke
 
         Ensure(result.Status == RouteAddressEvidenceStatus.Success,
             $"IPv4 loopback 최적 인터페이스 확인이 실패했습니다: {result.Status} {result.Message}");
-        Ensure(result.Interface is not null,
-            "성공한 loopback 경로에는 인터페이스 정보가 필요합니다.");
-        Ensure(result.Interface.Category
+        if (result.Interface is not RouteInterfaceDescriptor routeInterface)
+        {
+            throw new InvalidOperationException(
+                "성공한 loopback 경로에는 인터페이스 정보가 필요합니다.");
+        }
+
+        Ensure(routeInterface.Category
                == NetworkAdapterCategory.Loopback,
             "127.0.0.1의 Windows 최적 인터페이스는 Loopback이어야 합니다.");
-        Ensure(result.Interface.IdentityFingerprint.Length
+        Ensure(routeInterface.IdentityFingerprint.Length
                == RouteInterfaceFingerprint.DisplayLength,
             "로컬 인터페이스 ID 지문 길이가 잘못됐습니다.");
     }
