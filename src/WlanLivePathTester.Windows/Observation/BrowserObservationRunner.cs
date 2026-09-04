@@ -252,6 +252,28 @@ public sealed class BrowserObservationRunner
                         progress);
                 }
 
+                ObservationTimingContinuityDecision timing =
+                    ObservationTimingContinuityPolicy.Evaluate(
+                        previousCounter.Timestamp,
+                        currentCounter.Timestamp,
+                        options.SampleIntervalMilliseconds);
+                if (!timing.ShouldContinue)
+                {
+                    BrowserObservationStatus timingStatus = samples.Count == 0
+                        ? BrowserObservationStatus.Failed
+                        : BrowserObservationStatus.PartialSuccess;
+                    return CreateInterruptedResult(
+                        timingStatus,
+                        startedAt,
+                        samples,
+                        initialWlan,
+                        timing.Message,
+                        progress,
+                        BrowserObservationTerminationReason
+                            .TimingDiscontinuity,
+                        previousCounter.Timestamp);
+                }
+
                 bool isBaseline = index < baselineSampleCount;
                 BrowserObservationSample sample =
                     BrowserObservationCalculator.CreateSample(
@@ -390,9 +412,12 @@ public sealed class BrowserObservationRunner
         IReadOnlyList<BrowserObservationSample> samples,
         WlanSnapshot initialWlan,
         string message,
-        IProgress<BrowserObservationProgress>? progress)
+        IProgress<BrowserObservationProgress>? progress,
+        BrowserObservationTerminationReason? terminationReason = null,
+        DateTimeOffset? completedAtOverride = null)
     {
-        DateTimeOffset completedAt = _runtime.UtcNow;
+        DateTimeOffset completedAt = completedAtOverride
+            ?? _runtime.UtcNow;
         BrowserObservationSummary? summary = samples.Count == 0
             ? null
             : BrowserObservationCalculator.Summarize(
@@ -414,7 +439,8 @@ public sealed class BrowserObservationRunner
             summary,
             initialWlan,
             message,
-            BrowserObservationTerminationPolicy.FromStatus(status));
+            terminationReason
+                ?? BrowserObservationTerminationPolicy.FromStatus(status));
     }
 
     private static int CalculateSampleCount(
