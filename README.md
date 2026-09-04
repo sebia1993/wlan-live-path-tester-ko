@@ -42,37 +42,49 @@ Windows 11에서 현재 무선랜 연결 상태, 내부망 다운로드 성능, 
 
 ## 현재 상태
 
-**M0 저장소 기반과 M1 Native WLAN 상태 수집을 완료했고, M2 프록시 경로 판정 및 407 통합 인증 전송 계층을 구현했습니다.**
+**M0 저장소 기반, M1 Native WLAN, M2 프록시 경로·407 인증을 완료했고 M3·M4 내부/외부 다운로드 측정 기능을 구현했습니다.**
 
 현재 코드에 포함된 기능:
 
-- 외부 통신 없이 Windows Native WLAN API로 무선 인터페이스 열거
-- 현재 SSID, BSSID, RSSI, 신호 품질, 채널, 중심 주파수
-- PHY 규격, Rx/Tx PHY 링크 속도, 인증·암호화 방식
-- 무선 미연결, 인터페이스 없음, 접근 거부, WLAN 서비스 미실행, 부분 정보 실패 구분
+- 외부 통신 없이 Windows Native WLAN API로 무선 인터페이스와 현재 연결 정보 수집
+- SSID, BSSID, RSSI, 신호 품질, 채널, 중심 주파수, PHY, Rx/Tx 링크 속도, 인증·암호화 표시
 - 현재 사용자 프록시 설정의 존재 여부를 로컬 WinHTTP API로 확인
 - 대상 URL별 수동 프록시·바이패스·WPAD·PAC 경로 판정
-- WPAD 실패 후 명시적 PAC, 이후 수동 프록시로 제한적인 fallback
-- PAC/WPAD 취득 중 Windows 통합 인증이 필요할 때 한 번만 자동 로그온 재시도
-- 내부망은 DIRECT, 외부망은 PROXY를 기대하는 경로 일치 판정
-- WinHTTP `HEAD`·`GET` 수신 전용 요청 계층
+- WPAD → 명시적 PAC → 수동 프록시의 제한적 fallback
 - HTTP 407에서 Negotiate 우선, NTLM 차선의 현재 Windows 사용자 통합 인증
-- Basic·Digest·Passport 전용 프록시 거부와 반복 407 재시도 상한
-- 원격 사이트 401과 프록시 407의 분리 처리
-- 자동 리다이렉트 차단, 최대 수신 바이트 적용, 응답 본문 즉시 폐기
-- 실제 프록시 주소와 PAC URL을 표시하지 않는 WPF 결과 화면
-- 실제 사내 값이 없는 합성 자체 점검과 Windows CI
+- Basic·Digest·Passport 전용 프록시 거부, 원격 서버 401과 프록시 407 분리
+- 내부망 대상은 DIRECT, 외부망 대상은 PROXY 경로를 요청 전에 강제
+- 선택적 `HEAD` 사전검사와 `GET` 스트리밍 다운로드
+- 1~4개 병렬 스트림과 전체 최대 수신량 상한
+- 평균 Mbps, 1초 구간 Mbps, TTFB, HTTP 상태, 리다이렉트, 최종 URL 기록
+- `Age`, `Via`, `Cache-Status`, `X-Cache`, `Content-Length`, `Content-Range` 등 선택 응답 메타데이터 기록
+- 모든 리다이렉트 URL 재검증, 외부 HTTPS→HTTP 다운그레이드와 외부 로컬 주소 차단
+- 다운로드 본문 파일 비저장 및 고정 크기 버퍼 즉시 폐기
+- 내부 URL 1개와 외부 URL 최대 4개를 실행·취소·비교하는 WPF 화면
+- 실제 프록시 주소와 PAC URL을 표시하지 않는 결과 화면
+- 실제 사내 값이 없는 결정론적 자체 점검과 루프백 Windows smoke test
 
-프록시 경로 확인은 사용자가 버튼을 눌렀을 때만 실행됩니다. 수동 설정만 있으면 로컬 판정으로 끝나지만, PAC/WPAD 환경에서는 회사 내부 PAC 파일 조회·WPAD 탐색·PAC 스크립트가 요구하는 DNS 확인이 발생할 수 있습니다. 실제 HTTP 전송 계층도 상위 측정 기능에서 사용자가 측정을 시작한 경우에만 호출하도록 설계합니다.
+프로그램 시작과 WLAN·로컬 프록시 설정 확인만으로는 네트워크 요청을 만들지 않습니다. PAC/WPAD 경로 확인은 사용자가 경로 확인 버튼을 누른 경우에만 실행되고, 실제 다운로드는 사용자가 내부 또는 외부 측정 시작 버튼을 누른 경우에만 실행됩니다.
 
 아직 구현되지 않은 기능:
 
-- 내부·외부 다운로드 처리량과 구간별 속도 측정 UI
-- 리다이렉트 URL 재검증 및 캐시 관련 헤더 수집
-- 브라우저 다운로드 처리량 관찰
-- 완성형 로컬 보고서와 정식 릴리스
+- 브라우저 다운로드 중 Wi-Fi 인터페이스 처리량 관찰
+- 완성형 규칙 기반 로컬 JSON·CSV·단일 HTML 보고서
+- 정식 Portable ZIP·single-file 실행 파일·SHA-256 릴리스 파이프라인
 
-현재 WLAN 및 프록시 구현은 GitHub Windows 빌드와 루프백 합성 서버로 코드 경계를 검증했습니다. 실제 Windows 11 무선 어댑터·회사 PAC/WPAD·Negotiate/NTLM·GPO/EDR 환경의 동작은 사용자가 별도 수동 검증합니다. 진행 상황은 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md)에 기록합니다.
+현재 구현은 GitHub Windows runner와 `127.0.0.1` 합성 HTTP 서버·프록시로 코드 경계를 자동 검증합니다. 실제 Windows 11 무선 어댑터, 회사 PAC/WPAD, Negotiate/NTLM, TLS 검사, GPO/EDR 및 실제 내부·외부 경로는 사용자가 로컬 환경에서 별도 검증합니다. 진행 상황은 [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md)에 기록합니다.
+
+## 측정 화면 사용 방식
+
+1. `WLAN · 프록시` 탭에서 현재 WLAN과 프록시 설정 또는 특정 URL의 예상 경로를 확인합니다.
+2. `내부 · 외부 다운로드 측정` 탭에서 최대 수신량, 제한 시간, 스트림 수, 리다이렉트 상한을 지정합니다.
+3. 내부망 기준 서버 URL은 한 개 입력하고 `내부망 측정 시작`을 누릅니다.
+4. 외부 승인 URL은 한 줄에 하나씩 최대 네 개 입력하고 `외부망 대상 순차 측정`을 누릅니다.
+5. 진행 중 취소를 누르면 현재 WinHTTP 호출이 반환된 뒤 남은 단계와 대상을 중단합니다.
+
+각 외부 URL에는 공통 설정의 최대 수신량이 개별 적용됩니다. 예를 들어 최대 100MB, 외부 URL 3개이면 최악의 경우 총 300MB를 수신할 수 있습니다.
+
+자세한 측정 경계와 결과 해석은 [`docs/DOWNLOAD_MEASUREMENT.md`](docs/DOWNLOAD_MEASUREMENT.md)를 참고하십시오.
 
 ## 저장소 구조
 
@@ -83,9 +95,10 @@ wlan-live-path-tester-ko/
 │  ├─ WlanLivePathTester.Core/      측정 모델·검증·판정 규칙
 │  └─ WlanLivePathTester.Windows/   WinHTTP·WLAN·IP Helper 경계
 ├─ tests/
-│  ├─ WlanLivePathTester.SelfTest/       결정론적 Core 자체 점검
-│  ├─ WlanLivePathTester.WindowsSmoke/   Windows API 로컬 smoke test
-│  └─ WlanLivePathTester.ProxyAuthSmoke/ 루프백 WinHTTP·407 smoke test
+│  ├─ WlanLivePathTester.SelfTest/         결정론적 Core 자체 점검
+│  ├─ WlanLivePathTester.WindowsSmoke/     Windows API 로컬 smoke test
+│  ├─ WlanLivePathTester.ProxyAuthSmoke/   루프백 WinHTTP·407 smoke test
+│  └─ WlanLivePathTester.MeasurementSmoke/ 루프백 다운로드 측정 smoke test
 ├─ config/
 │  └─ targets.example.json          커밋 가능한 합성 예시
 ├─ resources/
@@ -104,6 +117,7 @@ dotnet build .\WlanLivePathTester.sln -c Release --no-restore
 dotnet run --project .\tests\WlanLivePathTester.SelfTest\WlanLivePathTester.SelfTest.csproj -c Release --no-build
 dotnet run --project .\tests\WlanLivePathTester.WindowsSmoke\WlanLivePathTester.WindowsSmoke.csproj -c Release --no-build
 dotnet run --project .\tests\WlanLivePathTester.ProxyAuthSmoke\WlanLivePathTester.ProxyAuthSmoke.csproj -c Release --no-build
+dotnet run --project .\tests\WlanLivePathTester.MeasurementSmoke\WlanLivePathTester.MeasurementSmoke.csproj -c Release --no-build
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\audit-repository.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\audit-network-boundary.ps1
 ```
@@ -117,7 +131,7 @@ SHA256SUMS.txt
 THIRD_PARTY_NOTICES.md
 ```
 
-핵심 측정 기능과 배포 파이프라인이 완료되기 전에는 정식 릴리스를 만들지 않습니다. 실제 환경 검증 결과는 공개 저장소에 원문으로 커밋하지 않습니다.
+정식 릴리스 파이프라인이 완료되기 전에는 Release 자산을 만들지 않습니다. 실제 환경 검증 결과와 사내 식별자는 공개 저장소에 원문으로 커밋하지 않습니다.
 
 ## 라이선스
 
