@@ -27,14 +27,35 @@ foreach ($text in @(
     '_windowsRouteProxyImporter.ImportAsync(', 'imported.TryGetSelection(target, out',
     '_routeComparisonCoordinatorV3.RunAsync(', '_latestRouteComparisonRunV3 = run',
     'token.ThrowIfCancellationRequested()', '_importedRouteProxy = null',
-    'e.Cancel = true', 'await pending', 'Dispatcher.BeginInvoke(',
-    'TextChanged -= OnRouteProxyTargetChanged', 'Closing -= OnRouteProxyImportClosing',
-    'Closed -= OnRouteProxyImportClosed', 'IsEnabledChanged -= OnRouteProxyBusyChanged'
+    'e.Cancel = true', 'await pending', 'Dispatcher.BeginInvoke('
 )) { Require-Text $ui $text }
 Require-Pattern `
     -Source $ui `
     -Pattern 'allowAutomatic\s*=\s*_allowAutomaticRouteProxy\?\.IsChecked\s*==\s*true' `
     -Name 'explicit PAC/WPAD consent checkbox assignment'
+foreach ($contract in @(
+    @{
+        Pattern = 'TextChanged\s*-=\s*OnRouteProxyTargetChanged'
+        Name = 'external target TextChanged cleanup'
+    },
+    @{
+        Pattern = 'Closing\s*-=\s*OnRouteProxyImportClosing'
+        Name = 'window Closing cleanup'
+    },
+    @{
+        Pattern = 'Closed\s*-=\s*OnRouteProxyImportClosed'
+        Name = 'window Closed cleanup'
+    },
+    @{
+        Pattern = 'IsEnabledChanged\s*-=\s*OnRouteProxyBusyChanged'
+        Name = 'route busy event cleanup'
+    }
+)) {
+    Require-Pattern `
+        -Source $ui `
+        -Pattern $contract.Pattern `
+        -Name $contract.Name
+}
 foreach ($text in @(
     'RunManualDirectiveAsync(', '_routeComparisonProxyDirectiveV3.Text =',
     'HttpClient', 'WinHttpRequestExecutor', 'Dns.Get', 'Marshal.',
