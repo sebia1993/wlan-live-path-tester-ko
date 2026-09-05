@@ -38,8 +38,7 @@ public sealed record InternalProxyRouteComparisonRunReportSnapshot(
     bool OperationCompleted,
     bool HasComparableResult,
     InternalProxyRouteComparisonReportComparison? Comparison,
-    IReadOnlyList<InternalProxyRouteComparisonReportProxyEntry>
-        ProxyEntries,
+    IReadOnlyList<InternalProxyRouteComparisonReportProxyEntry> ProxyEntries,
     InternalProxyRouteComparisonReportFinding Finding);
 
 public sealed record InternalProxyRouteComparisonReportComparison(
@@ -101,4 +100,7 @@ public sealed record InternalProxyRouteComparisonRunReportExportResult(
     string CsvPath,
     string HtmlPath,
     string Sha256Path,
-    IReadOnlyDictionary<string, string> Sha256);
+    IReadOnlyDictionary<string, string> Sha256)
+{
+    public bool CleanupIncomplete { get; init; }
+}
