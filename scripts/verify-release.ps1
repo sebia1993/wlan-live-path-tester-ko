@@ -44,6 +44,14 @@ try {
                     'scripts\test-prerelease-workflow-contract.ps1')
         }
 
+    Invoke-CheckedCommand `
+        -Description 'Validate route comparison coordinator-only UI contract' `
+        -Command {
+            powershell -NoProfile -ExecutionPolicy Bypass -File `
+                (Join-Path $root `
+                    'scripts\test-route-comparison-ui-v3-contract.ps1')
+        }
+
     Invoke-CheckedCommand -Description 'Restore solution' -Command {
         dotnet restore $solution
     }
