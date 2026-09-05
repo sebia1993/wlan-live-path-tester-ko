@@ -7,6 +7,8 @@ public partial class MainWindow
     private readonly ApplicationOperationCoordinator
         _applicationOperations = new();
     private ApplicationOperationLease?
+        _measurementOperationLease;
+    private ApplicationOperationLease?
         _routeComparisonOperationLeaseV3;
     private ApplicationOperationLease?
         _routeReportOperationLeaseV2;
