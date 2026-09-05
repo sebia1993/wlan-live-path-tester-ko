@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using WlanLivePathTester.Core.NetworkEnvironment;
 using WlanLivePathTester.Core.Proxy;
 
@@ -36,6 +37,9 @@ public sealed record ProxyEndpointRouteEvidenceItem(
     string Message,
     IReadOnlyList<string> Warnings)
 {
+    [JsonIgnore]
+    public string? SelectedInterfaceIdentity { get; init; }
+
     public bool IsRouteSuccess =>
         RouteStatus is DestinationRouteEvidenceStatus.Success
             or DestinationRouteEvidenceStatus.PartialSuccess;
