@@ -366,16 +366,25 @@ internal static class InternalProxyRouteComparisonCoordinatorV2Tests
                      WlanInterfaceId,
                      AlternateInterfaceId,
                      internalDescription,
-                     proxyDescription,
-                     "InternalRouteEvidence",
-                     "ProxyExecution",
-                     "SelectedInterfaceIdentity"
+                     proxyDescription
                  })
         {
             Ensure(!json.Contains(
                     secret,
                     StringComparison.OrdinalIgnoreCase),
                 $"실행 JSON에 원문 입력·근거가 남았습니다: {secret}");
+        }
+        foreach (string ignoredProperty in new[]
+                 {
+                     "\"InternalRouteEvidence\":",
+                     "\"ProxyExecution\":",
+                     "\"SelectedInterfaceIdentity\":"
+                 })
+        {
+            Ensure(!json.Contains(
+                    ignoredProperty,
+                    StringComparison.Ordinal),
+                $"실행 JSON에 메모리 전용 속성이 남았습니다: {ignoredProperty}");
         }
 
         Ensure(result.InternalRouteEvidence is not null
