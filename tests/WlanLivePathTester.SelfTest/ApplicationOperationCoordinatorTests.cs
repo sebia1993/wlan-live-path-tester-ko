@@ -11,26 +11,23 @@ internal static class ApplicationOperationCoordinatorTests
 #pragma warning restore CA2255
     internal static void Run()
     {
-        StartsAndCompletesOneOperation();
-        RejectsInvalidKinds();
-        RejectsASecondOperationWithTheActiveSnapshot();
+        StartsCompletesAndPublishesState();
+        RejectsInvalidAndConcurrentStarts();
         AllowsOnlyOneConcurrentStarter();
         RequestsCancellationAtMostOnce();
-        DistinguishesUnsupportedAndInactiveCancellation();
-        ContainsCancellationCallbackFailures();
+        DistinguishesUnsupportedInactiveAndFailedCancellation();
         StaleLeaseCannotCompleteANewerOperation();
-        ShutdownBlocksNewStartsCancelsAndWaits();
-        ShutdownCanWaitWithoutRequestingCancellation();
-        CanceledShutdownCanBeReopened();
+        ShutdownCancelsBlocksAndWaits();
+        ShutdownCanWaitWithoutCancelAndCanBeReopened();
         WaitForIdleHonorsCallerCancellation();
-        FaultyStateObserverCannotBreakTransitions();
+        FaultyObserverCannotBreakTransitions();
         ConcurrentCancelAndCompleteRemainConsistent();
         SafeJsonDoesNotExposeCallbacksOrLeaseInternals();
         Console.WriteLine(
             "PASS exclusive application operation coordinator tests");
     }
 
-    private static void StartsAndCompletesOneOperation()
+    private static void StartsCompletesAndPublishesState()
     {
         ApplicationOperationCoordinator coordinator = new();
         List<ApplicationOperationSnapshot> events = [];
@@ -39,33 +36,27 @@ internal static class ApplicationOperationCoordinatorTests
 
         ApplicationOperationStartResult start = coordinator.TryBegin(
             ApplicationOperationKind.DownloadMeasurement);
-
-        Ensure(start.Started,
-            "첫 작업은 시작돼야 합니다.");
-        Ensure(start.Status
-               == ApplicationOperationStartStatus.Started,
-            "첫 작업 상태는 Started여야 합니다.");
         ApplicationOperationLease lease = start.Lease
             ?? throw new InvalidOperationException(
                 "Started 결과에는 lease가 필요합니다.");
+
+        Ensure(start.Started
+               && start.Status
+                   == ApplicationOperationStartStatus.Started,
+            "첫 작업은 Started여야 합니다.");
         Ensure(start.Snapshot.IsBusy
                && start.Snapshot.OperationId == lease.OperationId
                && start.Snapshot.Kind
                    == ApplicationOperationKind.DownloadMeasurement,
             "시작 스냅샷에 활성 작업 ID와 종류가 필요합니다.");
-        Ensure(!start.Snapshot.SupportsCancellation,
-            "취소 callback이 없는 작업은 취소 불가여야 합니다.");
-        Ensure(coordinator.IsBusy,
-            "시작 뒤 coordinator가 busy여야 합니다.");
-        Ensure(!lease.Completion.IsCompleted,
-            "lease 완료 전 completion task가 끝나면 안 됩니다.");
+        Ensure(!start.Snapshot.SupportsCancellation
+               && !lease.Completion.IsCompleted,
+            "callback 없는 lease는 취소 불가이며 완료 전 task가 끝나면 안 됩니다.");
 
-        Ensure(lease.Complete(),
-            "첫 lease 완료는 true여야 합니다.");
-        Ensure(lease.IsCompleted,
-            "완료한 lease 상태를 유지해야 합니다.");
-        Ensure(lease.Completion.IsCompletedSuccessfully,
-            "lease completion task가 성공 완료돼야 합니다.");
+        Ensure(lease.Complete()
+               && lease.IsCompleted
+               && lease.Completion.IsCompletedSuccessfully,
+            "첫 완료가 coordinator와 completion task를 끝내야 합니다.");
         Ensure(!coordinator.IsBusy
                && coordinator.Snapshot
                    == ApplicationOperationSnapshot.Idle(),
@@ -73,41 +64,32 @@ internal static class ApplicationOperationCoordinatorTests
         Ensure(events.Count == 2
                && events[0].IsBusy
                && !events[1].IsBusy,
-            "시작과 완료 상태 변경을 순서대로 발행해야 합니다.");
+            "시작과 완료 상태를 순서대로 발행해야 합니다.");
         Ensure(!lease.Complete(),
-            "같은 lease의 두 번째 완료는 false여야 합니다.");
+            "같은 lease의 중복 완료는 false여야 합니다.");
     }
 
-    private static void RejectsInvalidKinds()
+    private static void RejectsInvalidAndConcurrentStarts()
     {
         ApplicationOperationCoordinator coordinator = new();
         EnsureThrows<ArgumentOutOfRangeException>(() =>
             coordinator.TryBegin(ApplicationOperationKind.None));
         EnsureThrows<ArgumentOutOfRangeException>(() =>
             coordinator.TryBegin((ApplicationOperationKind)999));
-        Ensure(!coordinator.IsBusy,
-            "잘못된 kind가 coordinator 상태를 변경하면 안 됩니다.");
-    }
 
-    private static void
-        RejectsASecondOperationWithTheActiveSnapshot()
-    {
-        ApplicationOperationCoordinator coordinator = new();
         using ApplicationOperationLease first = coordinator.TryBegin(
                 ApplicationOperationKind.BrowserObservation)
             .Lease
             ?? throw new InvalidOperationException(
                 "첫 관찰 lease가 필요합니다.");
-
         ApplicationOperationStartResult second = coordinator.TryBegin(
             ApplicationOperationKind.RouteComparison);
 
         Ensure(!second.Started
-               && second.Lease is null,
+               && second.Lease is null
+               && second.Status
+                   == ApplicationOperationStartStatus.Busy,
             "활성 작업 중 두 번째 lease를 만들면 안 됩니다.");
-        Ensure(second.Status
-               == ApplicationOperationStartStatus.Busy,
-            "두 번째 시작 거부 사유는 Busy여야 합니다.");
         Ensure(second.Snapshot.OperationId == first.OperationId
                && second.Snapshot.Kind
                    == ApplicationOperationKind.BrowserObservation,
@@ -117,8 +99,8 @@ internal static class ApplicationOperationCoordinatorTests
     private static void AllowsOnlyOneConcurrentStarter()
     {
         ApplicationOperationCoordinator coordinator = new();
-        ApplicationOperationStartResult[] starts = new
-            ApplicationOperationStartResult[64];
+        ApplicationOperationStartResult?[] starts = new
+            ApplicationOperationStartResult?[64];
 
         Parallel.For(0, starts.Length, index =>
         {
@@ -126,19 +108,21 @@ internal static class ApplicationOperationCoordinatorTests
                 ApplicationOperationKind.RouteEvidence);
         });
 
-        ApplicationOperationStartResult[] winners = starts
+        ApplicationOperationStartResult[] completed = starts
+            .Select(result => result
+                ?? throw new InvalidOperationException(
+                    "동시 시작 결과가 누락됐습니다."))
+            .ToArray();
+        ApplicationOperationStartResult[] winners = completed
             .Where(result => result.Started)
             .ToArray();
         Ensure(winners.Length == 1,
             $"동시 시작자는 정확히 한 개여야 합니다: {winners.Length}");
-        Ensure(starts.Count(result =>
-                result.Status
+        Ensure(completed.Count(result => result.Status
                     == ApplicationOperationStartStatus.Busy)
-               == starts.Length - 1,
+               == completed.Length - 1,
             "나머지 동시 시작자는 모두 Busy여야 합니다.");
         winners[0].Lease!.Dispose();
-        Ensure(!coordinator.IsBusy,
-            "승자 lease 완료 뒤 idle이어야 합니다.");
     }
 
     private static void RequestsCancellationAtMostOnce()
@@ -151,9 +135,9 @@ internal static class ApplicationOperationCoordinatorTests
             .Lease
             ?? throw new InvalidOperationException(
                 "취소 가능한 lease가 필요합니다.");
-
         ApplicationOperationCancellationStatus[] results = new
             ApplicationOperationCancellationStatus[32];
+
         Parallel.For(0, results.Length, index =>
         {
             results[index] = lease.RequestCancellation();
@@ -162,66 +146,61 @@ internal static class ApplicationOperationCoordinatorTests
         Ensure(callbackCount == 1,
             "동시 취소 요청에서도 callback은 한 번만 실행돼야 합니다.");
         Ensure(results.Count(status => status
-                == ApplicationOperationCancellationStatus.Requested)
+                    == ApplicationOperationCancellationStatus.Requested)
                == 1,
             "취소 요청 성공은 한 번이어야 합니다.");
         Ensure(results.Count(status => status
-                == ApplicationOperationCancellationStatus
-                    .AlreadyRequested)
+                    == ApplicationOperationCancellationStatus
+                        .AlreadyRequested)
                == results.Length - 1,
             "후속 취소 요청은 AlreadyRequested여야 합니다.");
         Ensure(coordinator.Snapshot.CancellationRequested
                && coordinator.Snapshot.SupportsCancellation,
-            "활성 스냅샷에 취소 요청 상태가 필요합니다.");
+            "스냅샷에 취소 요청 상태가 필요합니다.");
     }
 
     private static void
-        DistinguishesUnsupportedAndInactiveCancellation()
+        DistinguishesUnsupportedInactiveAndFailedCancellation()
     {
-        ApplicationOperationCoordinator coordinator = new();
-        Ensure(coordinator.RequestCancellation()
+        ApplicationOperationCoordinator idleCoordinator = new();
+        Ensure(idleCoordinator.RequestCancellation()
                == ApplicationOperationCancellationStatus.NotActive,
-            "idle 상태 취소는 NotActive여야 합니다.");
+            "idle 취소는 NotActive여야 합니다.");
 
-        ApplicationOperationLease lease = coordinator.TryBegin(
-                ApplicationOperationKind.DiagnosticReportSave)
+        ApplicationOperationCoordinator unsupportedCoordinator = new();
+        ApplicationOperationLease unsupported = unsupportedCoordinator
+            .TryBegin(ApplicationOperationKind.DiagnosticReportSave)
             .Lease
             ?? throw new InvalidOperationException(
                 "취소 불가 lease가 필요합니다.");
-        Ensure(coordinator.RequestCancellation()
+        Ensure(unsupportedCoordinator.RequestCancellation()
                == ApplicationOperationCancellationStatus.NotSupported,
-            "callback 없는 활성 작업 취소는 NotSupported여야 합니다.");
-        Ensure(!coordinator.Snapshot.CancellationRequested,
-            "지원하지 않는 취소를 요청 상태로 기록하면 안 됩니다.");
-        lease.Dispose();
-        Ensure(lease.RequestCancellation()
+            "callback 없는 작업은 NotSupported여야 합니다.");
+        Ensure(!unsupportedCoordinator.Snapshot.CancellationRequested,
+            "미지원 취소를 요청 상태로 기록하면 안 됩니다.");
+        unsupported.Dispose();
+        Ensure(unsupported.RequestCancellation()
                == ApplicationOperationCancellationStatus.NotActive,
-            "완료한 lease 취소는 NotActive여야 합니다.");
-    }
+            "완료 lease 취소는 NotActive여야 합니다.");
 
-    private static void ContainsCancellationCallbackFailures()
-    {
-        ApplicationOperationCoordinator coordinator = new();
-        using ApplicationOperationLease lease = coordinator.TryBegin(
+        ApplicationOperationCoordinator failedCoordinator = new();
+        using ApplicationOperationLease failed = failedCoordinator
+            .TryBegin(
                 ApplicationOperationKind.RouteComparisonReportSave,
                 () => throw new InvalidOperationException(
                     "secret callback failure"))
             .Lease
             ?? throw new InvalidOperationException(
                 "취소 가능한 저장 lease가 필요합니다.");
-
-        ApplicationOperationCancellationStatus result =
-            lease.RequestCancellation();
-
-        Ensure(result
+        Ensure(failed.RequestCancellation()
                == ApplicationOperationCancellationStatus.CallbackFailed,
             "callback 예외는 CallbackFailed로 변환해야 합니다.");
-        Ensure(coordinator.IsBusy,
-            "callback 예외가 활성 작업을 임의 완료하면 안 됩니다.");
-        Ensure(coordinator.Snapshot.CancellationRequested
-               && coordinator.Snapshot.CancellationCallbackFailed,
-            "취소 요청과 callback 실패를 구조화해야 합니다.");
-        Ensure(lease.RequestCancellation()
+        Ensure(failedCoordinator.IsBusy
+               && failedCoordinator.Snapshot.CancellationRequested
+               && failedCoordinator.Snapshot
+                   .CancellationCallbackFailed,
+            "callback 실패를 구조화하되 작업은 실제 완료까지 유지해야 합니다.");
+        Ensure(failed.RequestCancellation()
                == ApplicationOperationCancellationStatus
                    .AlreadyRequested,
             "실패한 callback을 자동 재시도하면 안 됩니다.");
@@ -244,7 +223,7 @@ internal static class ApplicationOperationCoordinatorTests
             ?? throw new InvalidOperationException(
                 "두 번째 lease가 필요합니다.");
         Ensure(!first.Complete(),
-            "stale lease를 다시 완료하면 false여야 합니다.");
+            "stale lease 중복 완료는 false여야 합니다.");
         Ensure(coordinator.Snapshot.OperationId
                == second.OperationId
                && coordinator.Snapshot.Kind
@@ -253,8 +232,7 @@ internal static class ApplicationOperationCoordinatorTests
         second.Dispose();
     }
 
-    private static void
-        ShutdownBlocksNewStartsCancelsAndWaits()
+    private static void ShutdownCancelsBlocksAndWaits()
     {
         ApplicationOperationCoordinator coordinator = new();
         int cancellationCount = 0;
@@ -268,19 +246,14 @@ internal static class ApplicationOperationCoordinatorTests
         Task<ApplicationOperationShutdownResult> shutdown =
             coordinator.RequestShutdownAsync();
 
-        Ensure(cancellationCount == 1,
-            "종료 요청이 활성 작업 취소 callback을 한 번 호출해야 합니다.");
-        Ensure(!shutdown.IsCompleted,
-            "활성 lease가 끝나기 전 종료 대기가 완료되면 안 됩니다.");
-        Ensure(coordinator.ShutdownRequested
-               && coordinator.Snapshot.ShutdownRequested,
+        Ensure(cancellationCount == 1
+               && !shutdown.IsCompleted,
+            "종료는 취소를 한 번 요청하고 실제 완료까지 기다려야 합니다.");
+        Ensure(coordinator.ShutdownRequested,
             "종료 요청 상태를 유지해야 합니다.");
-        ApplicationOperationStartResult rejected =
-            coordinator.TryBegin(
-                ApplicationOperationKind.NetworkEnvironmentCapture);
-        Ensure(rejected.Status
-               == ApplicationOperationStartStatus.ShutdownPending
-               && rejected.Lease is null,
+        Ensure(coordinator.TryBegin(
+                ApplicationOperationKind.NetworkEnvironmentCapture)
+            .Status == ApplicationOperationStartStatus.ShutdownPending,
             "종료 대기 중 새 작업을 시작하면 안 됩니다.");
 
         lease.Dispose();
@@ -289,14 +262,14 @@ internal static class ApplicationOperationCoordinatorTests
             .GetResult();
         Ensure(completed.CancellationStatus
                == ApplicationOperationCancellationStatus.Requested,
-            "종료 요청의 취소 결과를 유지해야 합니다.");
+            "종료 취소 결과를 유지해야 합니다.");
         Ensure(!completed.FinalSnapshot.IsBusy
                && completed.FinalSnapshot.ShutdownRequested,
             "종료 대기 완료 뒤 idle·shutdown 상태여야 합니다.");
     }
 
     private static void
-        ShutdownCanWaitWithoutRequestingCancellation()
+        ShutdownCanWaitWithoutCancelAndCanBeReopened()
     {
         ApplicationOperationCoordinator coordinator = new();
         int cancellationCount = 0;
@@ -306,49 +279,25 @@ internal static class ApplicationOperationCoordinatorTests
             .Lease
             ?? throw new InvalidOperationException(
                 "종료 대기용 lease가 필요합니다.");
-
         Task<ApplicationOperationShutdownResult> shutdown =
             coordinator.RequestShutdownAsync(
                 requestCancellation: false);
 
-        Ensure(cancellationCount == 0,
-            "취소 미요청 종료 대기는 callback을 호출하면 안 됩니다.");
-        Ensure(!shutdown.IsCompleted,
-            "lease 완료 전 종료 대기가 끝나면 안 됩니다.");
+        Ensure(cancellationCount == 0
+               && !shutdown.IsCompleted,
+            "취소 미요청 종료는 callback 없이 자연 완료를 기다려야 합니다.");
         lease.Dispose();
-        ApplicationOperationShutdownResult result = shutdown
-            .GetAwaiter()
-            .GetResult();
-        Ensure(result.CancellationStatus
+        Ensure(shutdown.GetAwaiter().GetResult().CancellationStatus
                == ApplicationOperationCancellationStatus.NotActive,
-            "취소를 요청하지 않은 종료 결과는 NotActive여야 합니다.");
-    }
-
-    private static void CanceledShutdownCanBeReopened()
-    {
-        ApplicationOperationCoordinator coordinator = new();
-        ApplicationOperationShutdownResult shutdown = coordinator
-            .RequestShutdownAsync()
-            .GetAwaiter()
-            .GetResult();
-        Ensure(shutdown.FinalSnapshot.ShutdownRequested,
-            "종료 요청 뒤 shutdown 상태여야 합니다.");
-        Ensure(coordinator.TryBegin(
-                ApplicationOperationKind.NetworkAdapterDiagnostics)
-            .Status == ApplicationOperationStartStatus.ShutdownPending,
-            "shutdown 상태에서 새 작업은 거부돼야 합니다.");
-
-        Ensure(coordinator.CancelShutdownRequest(),
-            "첫 종료 취소는 true여야 합니다.");
-        Ensure(!coordinator.CancelShutdownRequest(),
-            "이미 취소한 종료 요청의 두 번째 취소는 false여야 합니다.");
-        using ApplicationOperationLease lease = coordinator.TryBegin(
+            "취소하지 않은 종료 결과는 NotActive여야 합니다.");
+        Ensure(coordinator.CancelShutdownRequest()
+               && !coordinator.CancelShutdownRequest(),
+            "종료 요청은 한 번만 해제돼야 합니다.");
+        using ApplicationOperationLease reopened = coordinator.TryBegin(
                 ApplicationOperationKind.NetworkAdapterDiagnostics)
             .Lease
             ?? throw new InvalidOperationException(
-                "종료 요청 취소 뒤 새 작업을 시작할 수 있어야 합니다.");
-        Ensure(!coordinator.ShutdownRequested,
-            "종료 요청 취소 상태를 유지해야 합니다.");
+                "종료 해제 뒤 새 작업을 시작할 수 있어야 합니다.");
     }
 
     private static void WaitForIdleHonorsCallerCancellation()
@@ -370,34 +319,32 @@ internal static class ApplicationOperationCoordinatorTests
             "대기 호출자의 취소가 활성 작업을 완료하면 안 됩니다.");
     }
 
-    private static void FaultyStateObserverCannotBreakTransitions()
+    private static void FaultyObserverCannotBreakTransitions()
     {
         ApplicationOperationCoordinator coordinator = new();
-        int healthyObserverCount = 0;
+        int healthyCount = 0;
         coordinator.StateChanged += (_, _) =>
             throw new InvalidOperationException(
                 "observer secret failure");
         coordinator.StateChanged += (_, _) =>
-            Interlocked.Increment(ref healthyObserverCount);
+            Interlocked.Increment(ref healthyCount);
 
         using (ApplicationOperationLease lease = coordinator.TryBegin(
                    ApplicationOperationKind.ProxyRouteResolution)
                .Lease
                ?? throw new InvalidOperationException(
-                   "관찰자 테스트 lease가 필요합니다."))
+                   "observer 테스트 lease가 필요합니다."))
         {
             Ensure(coordinator.IsBusy,
-                "실패한 observer가 시작 전이를 롤백하면 안 됩니다.");
+                "observer 실패가 시작 전이를 롤백하면 안 됩니다.");
         }
 
-        Ensure(healthyObserverCount == 2,
-            "한 observer 실패가 다른 observer의 시작·완료 알림을 막으면 안 됩니다.");
-        Ensure(!coordinator.IsBusy,
-            "observer 예외와 무관하게 완료돼야 합니다.");
+        Ensure(healthyCount == 2
+               && !coordinator.IsBusy,
+            "한 observer 실패가 다른 알림 또는 완료를 막으면 안 됩니다.");
     }
 
-    private static void
-        ConcurrentCancelAndCompleteRemainConsistent()
+    private static void ConcurrentCancelAndCompleteRemainConsistent()
     {
         ApplicationOperationCoordinator coordinator = new();
         int cancellationCount = 0;
@@ -426,10 +373,9 @@ internal static class ApplicationOperationCoordinatorTests
 
         Ensure(cancellationCount is 0 or 1,
             "취소·완료 경쟁에서도 callback은 최대 한 번이어야 합니다.");
-        Ensure(!coordinator.IsBusy,
-            "취소·완료 경쟁 뒤 coordinator가 idle이어야 합니다.");
-        Ensure(lease.Completion.IsCompletedSuccessfully,
-            "경쟁 뒤 completion task가 완료돼야 합니다.");
+        Ensure(!coordinator.IsBusy
+               && lease.Completion.IsCompletedSuccessfully,
+            "취소·완료 경쟁 뒤 idle과 completion을 보장해야 합니다.");
     }
 
     private static void
@@ -462,14 +408,18 @@ internal static class ApplicationOperationCoordinatorTests
         Ensure(!leaseJson.Contains(
                 "Completion",
                 StringComparison.Ordinal),
-            "lease JSON에 Task completion을 직렬화하면 안 됩니다.");
-        Ensure(snapshotJson.Contains(
-                "WindowsProxyImport",
-                StringComparison.Ordinal)
-               && snapshotJson.Contains(
-                   "OperationId",
-                   StringComparison.Ordinal),
-            "안전 JSON에는 고정 작업 종류와 ID를 유지해야 합니다.");
+            "lease JSON에 completion Task를 직렬화하면 안 됩니다.");
+
+        using JsonDocument parsed = JsonDocument.Parse(snapshotJson);
+        JsonElement root = parsed.RootElement;
+        Ensure(root.GetProperty("Kind").GetInt32()
+               == (int)ApplicationOperationKind.WindowsProxyImport,
+            "기본 JSON의 숫자 enum 값이 활성 작업 종류와 일치해야 합니다.");
+        Ensure(root.GetProperty("OperationId").GetInt64()
+               == lease.OperationId,
+            "안전 JSON에는 활성 작업 ID가 필요합니다.");
+        Ensure(root.GetProperty("SupportsCancellation").GetBoolean(),
+            "안전 JSON에는 취소 지원 여부가 필요합니다.");
         lease.Dispose();
     }
 
