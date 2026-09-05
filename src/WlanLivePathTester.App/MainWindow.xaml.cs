@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using WlanLivePathTester.Core.Measurements;
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Core.Wlan;
 using WlanLivePathTester.Windows.Measurements;
 using WlanLivePathTester.Windows.Proxy;
@@ -87,6 +88,18 @@ public partial class MainWindow : Window
             ? NetworkPathKind.Internal
             : NetworkPathKind.External;
 
+        if (!TryBeginApplicationOperation(
+                ApplicationOperationKind.ProxyRouteResolution,
+                requestCancellation: null,
+                out ApplicationOperationLease? operationLease,
+                out string rejectionMessage)
+            || operationLease is null)
+        {
+            ProxyRouteResultText.Foreground = Brushes.DarkOrange;
+            ProxyRouteResultText.Text = rejectionMessage;
+            return;
+        }
+
         object? previousContent = ResolveProxyRouteButton.Content;
         ResolveProxyRouteButton.IsEnabled = false;
         ResolveProxyRouteButton.Content = "확인 중...";
@@ -131,12 +144,13 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             ProxyRouteResultText.Foreground = Brushes.DarkRed;
-            ProxyRouteResultText.Text = $"프록시 경로 확인 중 오류가 발생했습니다: {exception.Message}";
+            ProxyRouteResultText.Text = $"프록시 경로 확인 중 오류가 발생했습니다. 오류 유형: {exception.GetType().Name}. 예외 원문은 표시하지 않았습니다.";
         }
         finally
         {
             ResolveProxyRouteButton.Content = previousContent;
             ResolveProxyRouteButton.IsEnabled = !_measurementRunning;
+            operationLease.Dispose();
         }
     }
 
@@ -166,6 +180,7 @@ public partial class MainWindow : Window
             MaxRedirects: maxRedirects);
 
         await RunMeasurementOperationAsync(
+            ApplicationOperationKind.DownloadMeasurement,
             async cancellationToken =>
             {
                 InternalMeasurementResultText.Foreground = Brushes.DarkSlateGray;
@@ -222,6 +237,7 @@ public partial class MainWindow : Window
             .ToArray();
 
         await RunMeasurementOperationAsync(
+            ApplicationOperationKind.DownloadMeasurement,
             async cancellationToken =>
             {
                 ExternalMeasurementResultText.Foreground = Brushes.DarkSlateGray;
@@ -250,13 +266,35 @@ public partial class MainWindow : Window
             return;
         }
 
-        _cancelMeasurement();
+        ApplicationOperationCancellationStatus status =
+            _measurementOperationLease?.RequestCancellation()
+            ?? ApplicationOperationCancellationStatus.NotActive;
+        if (status == ApplicationOperationCancellationStatus.NotActive)
+        {
+            try
+            {
+                _cancelMeasurement();
+                status = ApplicationOperationCancellationStatus.Requested;
+            }
+            catch (ObjectDisposedException)
+            {
+                status = ApplicationOperationCancellationStatus.NotActive;
+            }
+        }
+
         CancelMeasurementButton.IsEnabled = false;
-        MeasurementStatusText.Foreground = Brushes.DarkOrange;
-        MeasurementStatusText.Text = "취소 요청됨 · 현재 WinHTTP 호출이 반환된 뒤 다음 단계와 남은 대상을 중단합니다.";
+        MeasurementStatusText.Foreground = status
+            == ApplicationOperationCancellationStatus.CallbackFailed
+            ? Brushes.DarkRed
+            : Brushes.DarkOrange;
+        string failure = FormatApplicationCancellationFailure(status);
+        MeasurementStatusText.Text = string.IsNullOrWhiteSpace(failure)
+            ? "취소 요청됨 · 현재 WinHTTP 호출이 반환된 뒤 다음 단계와 남은 대상을 중단합니다."
+            : failure;
     }
 
     private async Task RunMeasurementOperationAsync(
+        ApplicationOperationKind operationKind,
         Func<CancellationToken, Task> operation,
         string runningMessage)
     {
@@ -268,6 +306,19 @@ public partial class MainWindow : Window
         }
 
         using CancellationTokenSource cancellation = new();
+        if (!TryBeginApplicationOperation(
+                operationKind,
+                cancellation.Cancel,
+                out ApplicationOperationLease? operationLease,
+                out string rejectionMessage)
+            || operationLease is null)
+        {
+            MeasurementStatusText.Foreground = Brushes.DarkOrange;
+            MeasurementStatusText.Text = rejectionMessage;
+            return;
+        }
+
+        _measurementOperationLease = operationLease;
         _measurementRunning = true;
         _cancelMeasurement = cancellation.Cancel;
         SetMeasurementBusy(true);
@@ -284,16 +335,29 @@ public partial class MainWindow : Window
                 ? "측정 취소 처리가 완료되었습니다."
                 : "측정이 완료되었습니다.";
         }
+        catch (OperationCanceledException)
+        {
+            MeasurementStatusText.Foreground = Brushes.DarkOrange;
+            MeasurementStatusText.Text = "측정 취소 처리가 완료되었습니다.";
+        }
         catch (Exception exception)
         {
             MeasurementStatusText.Foreground = Brushes.DarkRed;
-            MeasurementStatusText.Text = $"측정 처리 중 오류가 발생했습니다: {exception.Message}";
+            MeasurementStatusText.Text = $"측정 처리 중 오류가 발생했습니다. 오류 유형: {exception.GetType().Name}. 예외 원문은 표시하지 않았습니다.";
         }
         finally
         {
             _cancelMeasurement = null;
             _measurementRunning = false;
             SetMeasurementBusy(false);
+            if (ReferenceEquals(
+                    _measurementOperationLease,
+                    operationLease))
+            {
+                _measurementOperationLease = null;
+            }
+
+            operationLease.Dispose();
         }
     }
 
