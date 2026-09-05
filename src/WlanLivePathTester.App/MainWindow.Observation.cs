@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using WlanLivePathTester.Core.Observation;
+using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Windows.Observation;
 
 namespace WlanLivePathTester.App;
@@ -202,17 +203,41 @@ public partial class MainWindow
             ObservationSeconds: durationSeconds,
             SampleIntervalMilliseconds: 1000);
 
+        using CancellationTokenSource activeCancellation = new();
+        using ApplicationOperationUiLease? lease = TryBeginUiApplicationOperation(
+            ApplicationOperationKind.BrowserObservation,
+            () =>
+            {
+                _observationCancellationContext.RequestUserCancellation();
+                activeCancellation.Cancel();
+            });
+        if (lease is null)
+        {
+            SetObservationResult(MeasurementStatusText.Text);
+            return;
+        }
+
         _observationCancellationContext.Reset();
         _observationPowerTransitionState.BeginObservation();
-        CancellationTokenSource activeCancellation = new();
         _observationCancellation = activeCancellation;
+        _observationUiLease = lease;
         SetObservationRunningState(isRunning: true);
         SetObservationResult(
             "관찰 준비 중입니다. 물리 Wi-Fi를 하나로 고정한 뒤 3초 동안 백그라운드 트래픽 기준치를 수집합니다. 기준 수집 완료 안내 후 브라우저 다운로드를 시작하십시오.");
 
         try
         {
-            Progress<BrowserObservationProgress> progress = new(OnObservationProgress);
+            Progress<BrowserObservationProgress> progress = new(value =>
+            {
+                // Progress<T> posts to the dispatcher and can arrive after
+                // completion. Old sessions must never repaint a new result.
+                if (lease.IsCurrent
+                    && ReferenceEquals(_observationCancellation, activeCancellation)
+                    && !_applicationOperationWindowClosed)
+                {
+                    OnObservationProgress(value);
+                }
+            });
             BrowserObservationResult result = await _browserObservationRunner.RunAsync(
                 options,
                 progress,
@@ -230,26 +255,24 @@ public partial class MainWindow
             if (ReferenceEquals(_observationCancellation, activeCancellation))
             {
                 _observationCancellation = null;
+                _observationUiLease = null;
             }
 
-            activeCancellation.Dispose();
             _ = _observationPowerTransitionState.CompleteObservation();
             SetObservationRunningState(isRunning: false);
+            lease.Dispose();
             TryRefreshAdaptersAfterPowerResume();
         }
     }
 
     private void OnStopObservationClick(object sender, RoutedEventArgs e)
     {
-        CancellationTokenSource? activeCancellation =
-            _observationCancellation;
-        if (activeCancellation is null)
+        if (_observationCancellation is null || _observationUiLease is null)
         {
             return;
         }
 
-        _observationCancellationContext.RequestUserCancellation();
-        activeCancellation.Cancel();
+        _observationUiLease.RequestCancellation();
         SetObservationResult("관찰 중지 요청을 처리하고 있습니다.");
     }
 
