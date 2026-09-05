@@ -62,6 +62,15 @@ public partial class MainWindow
     {
         Dispatcher.VerifyAccess();
         TabControl? tabs = FindVisualDescendant<TabControl>(this);
+        // A constructed but not yet shown Window can own initialized content
+        // without having its content presenter in the Window visual tree.
+        // Resolve the same tab host from that content; never invent a host or
+        // bypass the selected/enabled-tab and shared-lease checks below.
+        if (tabs is null && Content is DependencyObject contentRoot)
+        {
+            tabs = contentRoot as TabControl
+                ?? FindVisualDescendant<TabControl>(contentRoot);
+        }
         if (_applicationOperationWindowClosed || _applicationOperationUi is null
             || tabs?.SelectedItem is not TabItem selected || !selected.IsEnabled)
         {
