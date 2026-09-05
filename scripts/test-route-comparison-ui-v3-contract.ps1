@@ -149,7 +149,8 @@ foreach ($required in @(
     'SafeScheme(',
     'SafeEnum(',
     'SafeCode(',
-    '입력한 내부·외부 URL과 프록시 지시문'
+    'SafeFixedNarrative(finding.NextStep)',
+    'return builder.ToString().TrimEnd()'
 )) {
     Assert-Contains `
         -Content $renderer `
