@@ -6,6 +6,8 @@
 
 ### Added
 
+- 프록시 원문·출처 우선순위·비동기 취소·privacy를 검증하는 `ProxyBoundarySmoke` 12개 그룹과 Release 검증 연결
+- `docs/PROXY_RAW_INPUT_AND_CANCELLATION.md`에 원문 길이·제어 문자·늦은 반환의 처리 범위 기록
 - 공통 Core 작업 조정기에 내부·외부 다운로드, 기존 프록시 경로 판정, 브라우저 관찰 WPF 실행 경로 연결
 - 기존 내부 DIRECT–프록시 비교·Windows 프록시 가져오기와 동일한 coordinator 인스턴스 공유
 - 활성 작업 외 탭 및 늦게 생성된 탭 잠금, 원래 비활성 상태·상속·binding 복원
@@ -13,6 +15,13 @@
 - 이전 관찰의 늦은 Progress callback이 새 결과를 덮어쓰지 않는 세션 확인
 - 실제 WPF Dispatcher와 합성 delegate를 사용하는 `UiOperationSmoke` 10개 검증 그룹 및 Release 검증 연결
 - `docs/APPLICATION_OPERATION_UI_INTEGRATION.md`에 적용 범위와 남은 이행 작업 명시
+
+### Fixed
+
+- 경로 지시문을 Trim한 뒤 검증해 앞뒤 제어 문자 또는 원문 길이 초과를 놓칠 수 있던 문제
+- 대상별 DIRECT의 제어 문자 전용 입력이 빈 입력으로 축소되던 출처 선택 경계
+- WPF 수동 프록시 입력을 Core 검증 전에 Trim하던 전달 경로
+- 분석 콜백이 취소 뒤 정상 반환하면 늦은 payload를 Completed로 게시할 수 있던 문제
 
 ### Changed
 
@@ -24,6 +33,7 @@
 
 - 작업 조정 UI와 합성 검증에 런타임 패키지, AI·로컬 AI, 외부 분석 API, 텔레메트리, 업로드 또는 자동 업데이트를 추가하지 않음
 - 동기 WinHTTP 실행 중 네이티브 핸들을 강제로 닫지 않으며 실제 호출 반환 전에 완료로 처리하지 않음
+- 원문 입력 검증 실패 시 실행 가능한 프록시 지시문을 반환하지 않고 대상별 실패를 수동 프록시 또는 DIRECT로 대체하지 않음
 
 ### Planned
 
