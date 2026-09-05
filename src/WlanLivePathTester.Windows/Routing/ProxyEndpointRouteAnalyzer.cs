@@ -373,7 +373,10 @@ public sealed class ProxyEndpointRouteAnalyzer
                     sensitiveValues))
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Distinct(StringComparer.Ordinal)
-                .ToArray());
+                .ToArray())
+        {
+            SelectedInterfaceIdentity = selected?.InterfaceIdentity
+        };
     }
 
     private static string SanitizeRouteText(
