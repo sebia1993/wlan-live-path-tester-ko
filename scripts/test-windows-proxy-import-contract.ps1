@@ -11,11 +11,19 @@ $bootstrap = Get-Content -LiteralPath (Join-Path $root 'src\WlanLivePathTester.A
 function Require-Text([string]$Source, [string]$Text) {
     if (-not $Source.Contains($Text)) { throw "Missing import contract: $Text" }
 }
+function Require-Pattern([string]$Source, [string]$Pattern, [string]$Name) {
+    if (-not [regex]::IsMatch(
+            $Source,
+            $Pattern,
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+        throw "Missing import contract pattern: $Name"
+    }
+}
 function Forbid-Text([string]$Source, [string]$Text) {
     if ($Source.Contains($Text)) { throw "Forbidden import contract: $Text" }
 }
 foreach ($text in @(
-    'IsChecked = false', 'allowAutomatic = _allowAutomaticRouteProxy?.IsChecked == true',
+    'IsChecked = false',
     '_windowsRouteProxyImporter.ImportAsync(', 'imported.TryGetSelection(target, out',
     '_routeComparisonCoordinatorV3.RunAsync(', '_latestRouteComparisonRunV3 = run',
     'token.ThrowIfCancellationRequested()', '_importedRouteProxy = null',
@@ -23,6 +31,10 @@ foreach ($text in @(
     'TextChanged -= OnRouteProxyTargetChanged', 'Closing -= OnRouteProxyImportClosing',
     'Closed -= OnRouteProxyImportClosed', 'IsEnabledChanged -= OnRouteProxyBusyChanged'
 )) { Require-Text $ui $text }
+Require-Pattern `
+    -Source $ui `
+    -Pattern 'allowAutomatic\s*=\s*_allowAutomaticRouteProxy\?\.IsChecked\s*==\s*true' `
+    -Name 'explicit PAC/WPAD consent checkbox assignment'
 foreach ($text in @(
     'RunManualDirectiveAsync(', '_routeComparisonProxyDirectiveV3.Text =',
     'HttpClient', 'WinHttpRequestExecutor', 'Dns.Get', 'Marshal.',
