@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using WlanLivePathTester.Core.Reporting;
 
 namespace WlanLivePathTester.ReportSmoke;
@@ -6,9 +5,8 @@ namespace WlanLivePathTester.ReportSmoke;
 internal static class ReportSaveSessionTests
 {
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(15);
-#pragma warning disable CA2255
-    [ModuleInitializer]
-#pragma warning restore CA2255
+
+    // Called by Program.Main, NOT a ModuleInitializer: workers must not wait on module initialization.
     internal static void Run()
     {
         RunAsync().GetAwaiter().GetResult();
@@ -35,12 +33,12 @@ internal static class ReportSaveSessionTests
     {
         ReportSaveSession session = new();
         session.RequestCancellation();
-        await session.CancelAndWaitAsync();
+        await session.CancelAndWaitAsync().WaitAsync(Limit);
         Ensure(session.State == ReportSaveSessionState.Idle, "Idle cancel must remain idle.");
-        Ensure(await Start(session, token => token.IsCancellationRequested ? -1 : 42) == 42,
+        Ensure(await Bounded(Start(session, token => token.IsCancellationRequested ? -1 : 42)) == 42,
             "The next save needs a fresh uncanceled token.");
         Ensure(!session.IsBusy, "Completion must release the session.");
-        await session.CloseAsync();
+        await session.CloseAsync().WaitAsync(Limit);
     }
 
     private static async Task BusySessionRejectsSecondDelegate()
@@ -59,7 +57,7 @@ internal static class ReportSaveSessionTests
         }
         finally { release.Set(); }
         Ensure(await Bounded(first) == 1, "First save result was lost.");
-        await session.CloseAsync();
+        await session.CloseAsync().WaitAsync(Limit);
     }
 
     private static async Task SaveExceptionRemainsObservable()
@@ -95,11 +93,7 @@ internal static class ReportSaveSessionTests
     private static async Task SuccessfulCommitSurvivesLateCancel()
     {
         ReportSaveSession session = new();
-        Task<int> task = Start(session, token =>
-        {
-            session.RequestCancellation();
-            return 9;
-        });
+        Task<int> task = Start(session, token => { session.RequestCancellation(); return 9; });
         Ensure(await Bounded(task) == 9 && task.Status == TaskStatus.RanToCompletion,
             "Late cancellation must not revoke a committed result.");
     }
@@ -174,7 +168,7 @@ internal static class ReportSaveSessionTests
         Ensure(session.State == ReportSaveSessionState.Closed, "Expected closed state.");
         Ensure(!session.TryStart(token => 0, out Task<int>? after), "Closed session cannot restart.");
         Ensure(after is null, "Rejected task must be null.");
-        await session.CloseAsync();
+        await session.CloseAsync().WaitAsync(Limit);
     }
 
     private static async Task CloseObservesFailureWithoutHidingOriginalTask()

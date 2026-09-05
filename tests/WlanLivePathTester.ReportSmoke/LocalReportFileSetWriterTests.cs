@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using WlanLivePathTester.Core.Reporting;
@@ -12,9 +11,7 @@ internal static class LocalReportFileSetWriterTests
     private const string Csv = "section,key,value\nmetadata,case,local-only\n";
     private const string Html = "<!doctype html><html lang=\"ko\"><body>로컬 보고서</body></html>";
 
-#pragma warning disable CA2255
-    [ModuleInitializer]
-#pragma warning restore CA2255
+    // Program.Main invokes this after module initialization; parallel workers must not run in a module constructor.
     internal static void Run()
     {
         RecognizesVanishedReservationsWithoutRetryingDiskFull();
@@ -41,14 +38,11 @@ internal static class LocalReportFileSetWriterTests
     {
         using TestDirectory directory = new();
         string missing = System.IO.Path.Combine(directory.Path, "already-closed.lock");
-        Ensure(LocalReportFileSetWriter.IsReservationCollision(
-            new IOException("synthetic exists", unchecked((int)0x80070050)), missing),
+        Ensure(LocalReportFileSetWriter.IsReservationCollision(new IOException("synthetic exists", unchecked((int)0x80070050)), missing),
             "File-exists must stay a collision even if the reservation has just been deleted.");
-        Ensure(LocalReportFileSetWriter.IsReservationCollision(
-            new IOException("synthetic exists", unchecked((int)0x800700b7)), missing),
+        Ensure(LocalReportFileSetWriter.IsReservationCollision(new IOException("synthetic exists", unchecked((int)0x800700b7)), missing),
             "Already-exists must not depend on a racy existence probe.");
-        Ensure(!LocalReportFileSetWriter.IsReservationCollision(
-            new IOException("synthetic disk full", unchecked((int)0x80070070)), missing),
+        Ensure(!LocalReportFileSetWriter.IsReservationCollision(new IOException("synthetic disk full", unchecked((int)0x80070070)), missing),
             "Disk-full must not be retried as a basename collision.");
         AssertEmpty(directory.Path);
     }
@@ -61,10 +55,8 @@ internal static class LocalReportFileSetWriterTests
         Ensure(Directory.GetDirectories(directory.Path).Length == 0, "Staging directory must be removed.");
         Ensure(!result.CleanupIncomplete, "Successful cleanup must not report a warning.");
         VerifyHashes(result);
-        Ensure(File.ReadAllBytes(result.CsvPath).Take(3).SequenceEqual(new byte[] { 0xef, 0xbb, 0xbf }),
-            "CSV must retain the Excel-compatible UTF-8 BOM.");
-        Ensure(!File.ReadAllBytes(result.JsonPath).Take(3).SequenceEqual(new byte[] { 0xef, 0xbb, 0xbf }),
-            "JSON must not have a BOM.");
+        Ensure(File.ReadAllBytes(result.CsvPath).Take(3).SequenceEqual(new byte[] { 0xef, 0xbb, 0xbf }), "CSV must retain UTF-8 BOM.");
+        Ensure(!File.ReadAllBytes(result.JsonPath).Take(3).SequenceEqual(new byte[] { 0xef, 0xbb, 0xbf }), "JSON must not have a BOM.");
     }
 
     private static void ReservesDistinctNamesForConcurrentSaves()
@@ -74,11 +66,10 @@ internal static class LocalReportFileSetWriterTests
         {
             string marker = "save-" + index;
             var result = LocalReportFileSetWriter.Write(directory.Path, Name, marker, marker, marker);
-            Ensure(File.ReadAllText(result.JsonPath) == marker
-                && File.ReadAllText(result.CsvPath) == marker
+            Ensure(File.ReadAllText(result.JsonPath) == marker && File.ReadAllText(result.CsvPath) == marker
                 && File.ReadAllText(result.HtmlPath) == marker, "Concurrent reports must not be mixed.");
             return result;
-        }))).GetAwaiter().GetResult();
+        }))).WaitAsync(TimeSpan.FromSeconds(45)).GetAwaiter().GetResult();
         Ensure(results.Select(result => result.JsonPath).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 32,
             "Every concurrent operation needs a unique basename.");
         Ensure(Directory.GetFiles(directory.Path).Length == 128, "Concurrent saves must leave 128 report files.");
@@ -95,8 +86,7 @@ internal static class LocalReportFileSetWriterTests
         Directory.CreateDirectory(oldDirectory);
         var result = Save(directory.Path);
         Ensure(System.IO.Path.GetFileName(result.JsonPath) == Name + "_2.json", "File and directory collisions need new suffixes.");
-        Ensure(File.ReadAllText(oldFile) == "existing-report" && Directory.Exists(oldDirectory),
-            "Existing output must never be replaced or removed.");
+        Ensure(File.ReadAllText(oldFile) == "existing-report" && Directory.Exists(oldDirectory), "Existing output must never be replaced or removed.");
     }
 
     private static void SkipsAnExistingReservationWithoutRemovingIt()
@@ -124,19 +114,16 @@ internal static class LocalReportFileSetWriterTests
         for (int index = 1; index <= 4; index++)
         {
             using TestDirectory directory = new();
-            var operations = new FaultOperations { FailWrite = index };
-            Throws<IOException>(() => Save(directory.Path, operations: operations));
+            Throws<IOException>(() => Save(directory.Path, operations: new FaultOperations { FailWrite = index }));
             AssertEmpty(directory.Path);
         }
     }
-
     private static void PublicationFailuresNeverPublishCompletionMarker()
     {
         for (int index = 1; index <= 4; index++)
         {
             using TestDirectory directory = new();
-            var operations = new FaultOperations { FailMove = index };
-            Throws<IOException>(() => Save(directory.Path, operations: operations));
+            Throws<IOException>(() => Save(directory.Path, operations: new FaultOperations { FailMove = index }));
             AssertEmpty(directory.Path);
         }
     }
@@ -147,69 +134,47 @@ internal static class LocalReportFileSetWriterTests
         string? foreignFile = null;
         var operations = new FaultOperations
         {
-            BeforeMove = (number, path) =>
-            {
-                if (number == 2)
-                {
-                    foreignFile = path;
-                    File.WriteAllText(path, "foreign-file");
-                }
-            }
+            BeforeMove = (number, path) => { if (number == 2) { foreignFile = path; File.WriteAllText(path, "foreign-file"); } }
         };
         Throws<IOException>(() => Save(directory.Path, operations: operations));
-        Ensure(foreignFile is not null && File.ReadAllText(foreignFile) == "foreign-file",
-            "A late non-cooperating writer's file must survive rollback.");
+        Ensure(foreignFile is not null && File.ReadAllText(foreignFile) == "foreign-file", "Late foreign file must survive rollback.");
         Ensure(Directory.GetFiles(directory.Path).Length == 1, "Only the foreign collision file should remain.");
         Ensure(Directory.GetDirectories(directory.Path).Length == 0, "Owned staging must be removed.");
     }
-
     private static void CancellationBeforeCommitRollsBack()
     {
         using TestDirectory directory = new();
         using CancellationTokenSource cancellation = new();
-        var operations = new FaultOperations
-        {
-            AfterMove = (number, path) => { if (number == 2) cancellation.Cancel(); }
-        };
+        var operations = new FaultOperations { AfterMove = (number, path) => { if (number == 2) cancellation.Cancel(); } };
         Throws<OperationCanceledException>(() => Save(directory.Path, cancellation.Token, operations));
         AssertEmpty(directory.Path);
     }
-
     private static void CancellationAfterCommitKeepsTheCompletedReport()
     {
         using TestDirectory directory = new();
         using CancellationTokenSource cancellation = new();
-        var operations = new FaultOperations
-        {
-            AfterMove = (number, path) => { if (number == 4) cancellation.Cancel(); }
-        };
+        var operations = new FaultOperations { AfterMove = (number, path) => { if (number == 4) cancellation.Cancel(); } };
         var result = Save(directory.Path, cancellation.Token, operations);
-        Ensure(cancellation.IsCancellationRequested && File.Exists(result.Sha256Path),
-            "Cancellation after commit must not report a failed save.");
+        Ensure(cancellation.IsCancellationRequested && File.Exists(result.Sha256Path), "Cancellation after commit must preserve success.");
         VerifyHashes(result);
     }
-
     private static void CleanupFailureAfterCommitIsAWarningNotSaveFailure()
     {
         using TestDirectory directory = new();
         var result = Save(directory.Path, operations: new FaultOperations { FailDirectoryCleanup = true });
-        Ensure(result.CleanupIncomplete, "Successful publication with incomplete cleanup needs an explicit warning.");
+        Ensure(result.CleanupIncomplete, "Committed report with incomplete cleanup needs an explicit warning.");
         VerifyHashes(result);
-        Ensure(Directory.GetFiles(directory.Path).Length == 4, "A valid committed report must be preserved.");
+        Ensure(Directory.GetFiles(directory.Path).Length == 4, "Committed files must remain.");
     }
-
     private static void FailedRollbackReportsRecoveryRequired()
     {
         using TestDirectory directory = new();
         var operations = new FaultOperations { FailMove = 2, FailPublishedJsonCleanup = true };
         var error = Throws<ReportFileSetRecoveryException>(() => Save(directory.Path, operations: operations));
-        Ensure(error.Message.StartsWith("REPORT_FILE_SET_RECOVERY_REQUIRED", StringComparison.Ordinal),
-            "Recovery-required condition needs a stable safe message.");
-        Ensure(Directory.GetFiles(directory.Path, "*_SHA256SUMS.txt").Length == 0,
-            "Failed rollback must not have a completion marker.");
-        Ensure(Directory.GetFiles(directory.Path, "*.json").Length == 1, "Failed cleanup fixture must retain its partial JSON.");
+        Ensure(error.Message.StartsWith("REPORT_FILE_SET_RECOVERY_REQUIRED", StringComparison.Ordinal), "Stable recovery message required.");
+        Ensure(Directory.GetFiles(directory.Path, "*_SHA256SUMS.txt").Length == 0, "Failed rollback must not have a completion marker.");
+        Ensure(Directory.GetFiles(directory.Path, "*.json").Length == 1, "Fixture must retain the partial JSON.");
     }
-
     private static void CompletionMarkerIsAlwaysLast()
     {
         using TestDirectory directory = new();
@@ -220,14 +185,12 @@ internal static class LocalReportFileSetWriterTests
             {
                 moved.Add(path);
                 Ensure(Directory.GetFiles(directory.Path, "*_SHA256SUMS.txt").Length == (number == 4 ? 1 : 0),
-                    "Checksum manifest must be visible only after all three data files.");
+                    "Manifest must appear only after all data files.");
             }
         };
         Save(directory.Path, operations: operations);
-        Ensure(moved.Count == 4 && moved[3].EndsWith("_SHA256SUMS.txt", StringComparison.Ordinal),
-            "Manifest must be the fourth publication.");
+        Ensure(moved.Count == 4 && moved[3].EndsWith("_SHA256SUMS.txt", StringComparison.Ordinal), "Manifest must be fourth.");
     }
-
     private static void UnexpectedStageContentIsNotRecursivelyDeleted()
     {
         using TestDirectory directory = new();
@@ -248,7 +211,6 @@ internal static class LocalReportFileSetWriterTests
             "Cleanup must never recursively delete unexpected files.");
         VerifyHashes(result);
     }
-
     private static void RejectsUnsafeBaseNamesBeforeFilesystemWrites()
     {
         using TestDirectory directory = new();
@@ -256,44 +218,33 @@ internal static class LocalReportFileSetWriterTests
             Throws<ArgumentException>(() => LocalReportFileSetWriter.Write(directory.Path, bad, Json, Csv, Html));
         AssertEmpty(directory.Path);
     }
-
     private static void RejectsInvalidUtf16WithoutLeavingPartialFiles()
     {
         using TestDirectory directory = new();
-        Throws<EncoderFallbackException>(() => LocalReportFileSetWriter.Write(directory.Path, Name,
-            new string((char)0xd800, 1), Csv, Html));
+        Throws<EncoderFallbackException>(() => LocalReportFileSetWriter.Write(directory.Path, Name, new string((char)0xd800, 1), Csv, Html));
         AssertEmpty(directory.Path);
     }
 
-    private static InternalProxyRouteComparisonRunReportExportResult Save(
-        string directory, CancellationToken token = default, ReportFileOperations? operations = null) =>
+    private static InternalProxyRouteComparisonRunReportExportResult Save(string directory,
+        CancellationToken token = default, ReportFileOperations? operations = null) =>
         LocalReportFileSetWriter.Write(directory, Name, Json, Csv, Html, token, operations);
-
     private static void VerifyHashes(InternalProxyRouteComparisonRunReportExportResult result)
     {
         Ensure(result.Sha256.Count == 3, "Expected three hashes.");
         string manifest = File.ReadAllText(result.Sha256Path);
         foreach ((string file, string expected) in result.Sha256)
         {
-            string actual = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(
-                System.IO.Path.Combine(result.OutputDirectory, file)))).ToLowerInvariant();
-            Ensure(actual == expected && manifest.Contains(expected + "  " + file, StringComparison.Ordinal),
-                "Manifest and actual bytes must match.");
+            string actual = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(System.IO.Path.Combine(result.OutputDirectory, file)))).ToLowerInvariant();
+            Ensure(actual == expected && manifest.Contains(expected + "  " + file, StringComparison.Ordinal), "Manifest and bytes must match.");
         }
     }
-    private static void AssertEmpty(string directory) =>
-        Ensure(Directory.GetFileSystemEntries(directory).Length == 0, "No owned outputs, locks or stages should remain.");
+    private static void AssertEmpty(string directory) => Ensure(Directory.GetFileSystemEntries(directory).Length == 0, "Owned files/locks/stages must be cleaned.");
     private static TException Throws<TException>(Action action) where TException : Exception
     {
-        try { action(); }
-        catch (TException exception) { return exception; }
+        try { action(); } catch (TException exception) { return exception; }
         throw new InvalidOperationException("Expected " + typeof(TException).Name);
     }
-    private static void Ensure(bool value, string message)
-    {
-        if (!value) throw new InvalidOperationException(message);
-    }
-
+    private static void Ensure(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     private sealed class FaultOperations : ReportFileOperations
     {
         internal int FailWrite { get; init; }
@@ -322,8 +273,7 @@ internal static class LocalReportFileSetWriterTests
         }
         internal override void DeleteFile(string path)
         {
-            if (FailPublishedJsonCleanup && path.EndsWith(".json", StringComparison.Ordinal))
-                throw new IOException("synthetic rollback failure");
+            if (FailPublishedJsonCleanup && path.EndsWith(".json", StringComparison.Ordinal)) throw new IOException("synthetic rollback failure");
             base.DeleteFile(path);
         }
         internal override void DeleteDirectory(string path)
@@ -334,8 +284,7 @@ internal static class LocalReportFileSetWriterTests
     }
     private sealed class TestDirectory : IDisposable
     {
-        internal string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-            "WlanReportFileSetTests", Guid.NewGuid().ToString("N"));
+        internal string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WlanReportFileSetTests", Guid.NewGuid().ToString("N"));
         internal TestDirectory() => Directory.CreateDirectory(Path);
         public void Dispose() { if (Directory.Exists(Path)) Directory.Delete(Path, recursive: true); }
     }
