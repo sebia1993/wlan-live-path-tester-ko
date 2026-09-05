@@ -38,6 +38,10 @@ try {
         powershell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'scripts\test-route-comparison-ui-v3-contract.ps1')
     }
+    Invoke-CheckedCommand -Description 'Validate central application route operation gate' -Command {
+        powershell -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $root 'scripts\test-application-operation-route-gate.ps1')
+    }
     Invoke-CheckedCommand -Description 'Validate Windows proxy import consent and UI contract' -Command {
         powershell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'scripts\test-windows-proxy-import-contract.ps1')

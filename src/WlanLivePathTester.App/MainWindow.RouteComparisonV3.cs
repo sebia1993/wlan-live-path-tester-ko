@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Core.Reporting;
 using WlanLivePathTester.Core.Routing;
 using WlanLivePathTester.Windows.Routing;
@@ -207,7 +208,8 @@ public partial class MainWindow
         object sender,
         RoutedEventArgs e)
     {
-        if (_routeComparisonCancellationV3 is not null)
+        if (_routeComparisonCancellationV3 is not null
+            || _routeComparisonOperationLeaseV3 is not null)
         {
             return;
         }
@@ -237,7 +239,22 @@ public partial class MainWindow
             : null;
 
         CancellationTokenSource active = new();
+        if (!TryBeginApplicationOperation(
+                ApplicationOperationKind.RouteComparison,
+                active.Cancel,
+                out ApplicationOperationLease? operationLease,
+                out string rejectionMessage)
+            || operationLease is null)
+        {
+            active.Dispose();
+            SetRouteComparisonResultV3(
+                rejectionMessage,
+                Brushes.DarkOrange);
+            return;
+        }
+
         _routeComparisonCancellationV3 = active;
+        _routeComparisonOperationLeaseV3 = operationLease;
         SetRouteComparisonBusyV3(isBusy: true);
         SetRouteComparisonResultV3(
             "입력을 검증하고 있습니다. 검증을 통과한 경우에만 내부 대상과 프록시 후보의 Windows 로컬 경로를 확인합니다.",
@@ -286,7 +303,21 @@ public partial class MainWindow
             }
 
             active.Dispose();
-            SetRouteComparisonBusyV3(isBusy: false);
+            try
+            {
+                SetRouteComparisonBusyV3(isBusy: false);
+            }
+            finally
+            {
+                if (ReferenceEquals(
+                        _routeComparisonOperationLeaseV3,
+                        operationLease))
+                {
+                    _routeComparisonOperationLeaseV3 = null;
+                }
+
+                operationLease.Dispose();
+            }
         }
     }
 
@@ -296,23 +327,24 @@ public partial class MainWindow
     {
         CancellationTokenSource? active =
             _routeComparisonCancellationV3;
-        if (active is null)
+        ApplicationOperationLease? operationLease =
+            _routeComparisonOperationLeaseV3;
+        if (active is null || operationLease is null)
         {
             return;
         }
 
-        try
-        {
-            active.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // The comparison completed while the click was handled.
-        }
-
+        ApplicationOperationCancellationStatus status =
+            operationLease.RequestCancellation();
+        string failure = FormatApplicationCancellationFailure(status);
         SetRouteComparisonResultV3(
-            "경로 비교 중지 요청을 처리하고 있습니다.",
-            Brushes.DarkOrange);
+            string.IsNullOrWhiteSpace(failure)
+                ? "경로 비교 중지 요청을 처리하고 있습니다."
+                : failure,
+            status == ApplicationOperationCancellationStatus
+                .CallbackFailed
+                ? Brushes.DarkRed
+                : Brushes.DarkOrange);
     }
 
     private static string? ReadCurrentWlanInterfaceIdV3()
@@ -437,13 +469,21 @@ public partial class MainWindow
         object? sender,
         EventArgs e)
     {
-        try
+        ApplicationOperationCancellationStatus status =
+            _routeComparisonOperationLeaseV3?.RequestCancellation()
+            ?? ApplicationOperationCancellationStatus.NotActive;
+        if (status is ApplicationOperationCancellationStatus.NotActive
+            or ApplicationOperationCancellationStatus.NotSupported
+            or ApplicationOperationCancellationStatus.CallbackFailed)
         {
-            _routeComparisonCancellationV3?.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // The comparison completed while the window was closing.
+            try
+            {
+                _routeComparisonCancellationV3?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The comparison completed while the window was closing.
+            }
         }
 
         if (_routeComparisonClosedHookedV3)

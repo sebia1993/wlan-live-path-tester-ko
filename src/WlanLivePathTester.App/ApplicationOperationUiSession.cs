@@ -7,16 +7,19 @@ using WlanLivePathTester.Core.Operations;
 
 namespace WlanLivePathTester.App;
 
-// All UI transitions occur on the owning Dispatcher. The Core coordinator
-// remains the authoritative operation lifetime; cancellation never releases it.
-internal sealed class ApplicationOperationUiSession(Dispatcher dispatcher)
+// UI transitions occur on the owning Dispatcher. Production supplies the same
+// coordinator used by route/import actions; tests may create an isolated one.
+internal sealed class ApplicationOperationUiSession(
+    Dispatcher dispatcher,
+    ApplicationOperationCoordinator? coordinator = null)
 {
-    private readonly ApplicationOperationCoordinator _coordinator = new();
+    private readonly ApplicationOperationCoordinator _coordinator = coordinator ?? new();
     private readonly Dispatcher _dispatcher = dispatcher
         ?? throw new ArgumentNullException(nameof(dispatcher));
     private ApplicationOperationUiLease? _active;
 
     public ApplicationOperationSnapshot Snapshot => _coordinator.Snapshot;
+    public bool HasActiveUiLease => _active is not null;
 
     public ApplicationOperationUiLease? TryBegin(
         ApplicationOperationKind kind,
@@ -27,8 +30,7 @@ internal sealed class ApplicationOperationUiSession(Dispatcher dispatcher)
         _dispatcher.VerifyAccess();
         ArgumentNullException.ThrowIfNull(host);
         host.VerifyAccess();
-        ApplicationOperationStartResult start = _coordinator.TryBegin(
-            kind, requestCancellation);
+        ApplicationOperationStartResult start = _coordinator.TryBegin(kind, requestCancellation);
         status = start.Status;
         if (!start.Started) return null;
 
@@ -57,20 +59,15 @@ internal sealed class ApplicationOperationUiSession(Dispatcher dispatcher)
 
     internal void VerifyAccess() => _dispatcher.VerifyAccess();
 
-    internal bool IsCurrent(ApplicationOperationUiLease lease) =>
-        ReferenceEquals(_active, lease);
+    internal bool IsCurrent(ApplicationOperationUiLease lease) => ReferenceEquals(_active, lease);
 
     internal void Complete(ApplicationOperationUiLease lease)
     {
         _dispatcher.VerifyAccess();
         if (!ReferenceEquals(_active, lease)) return;
-
-        // Restore the UI before releasing the Core lease, so reentrant/new
-        // work cannot be overwritten by this operation's late cleanup.
-        try
-        {
-            lease.RestorePeerTabs();
-        }
+        // Restore before releasing the Core lease. A late cleanup must never
+        // overwrite controls belonging to a newly started operation.
+        try { lease.RestorePeerTabs(); }
         finally
         {
             _active = null;
@@ -104,8 +101,7 @@ internal sealed class ApplicationOperationUiLease : IDisposable
     public long OperationId => CoreLease.OperationId;
     public bool IsCurrent => !_completed && _session.IsCurrent(this);
 
-    public ApplicationOperationCancellationStatus RequestCancellation() =>
-        CoreLease.RequestCancellation();
+    public ApplicationOperationCancellationStatus RequestCancellation() => CoreLease.RequestCancellation();
 
     internal void LockPeerTabs()
     {
@@ -115,16 +111,15 @@ internal sealed class ApplicationOperationUiLease : IDisposable
             _collection = _host.Items;
             _collection.CollectionChanged += OnTabsChanged;
         }
-
         foreach (TabItem tab in _host.Items.OfType<TabItem>())
         {
-            if (ReferenceEquals(tab, _ownerTab) || _peerStates.ContainsKey(tab))
-                continue;
-
+            if (ReferenceEquals(tab, _ownerTab) || _peerStates.ContainsKey(tab)) continue;
             _peerStates.Add(tab, new TabEnabledValue(
                 tab.ReadLocalValue(UIElement.IsEnabledProperty),
                 BindingOperations.GetBindingBase(tab, UIElement.IsEnabledProperty)));
-            tab.SetCurrentValue(UIElement.IsEnabledProperty, false);
+            // Suspend a local binding while locked so source updates cannot
+            // re-enable a peer mid-operation. Restore/re-evaluate it on exit.
+            tab.SetValue(UIElement.IsEnabledProperty, false);
         }
     }
 
@@ -140,15 +135,11 @@ internal sealed class ApplicationOperationUiLease : IDisposable
             _collection.CollectionChanged -= OnTabsChanged;
             _collection = null;
         }
-
         foreach ((TabItem tab, TabEnabledValue original) in _peerStates)
         {
             if (original.Binding is not null)
             {
-                // Re-evaluate the live source, rather than replaying an old
-                // effective Boolean or destroying an existing binding.
-                BindingOperations.SetBinding(
-                    tab, UIElement.IsEnabledProperty, original.Binding);
+                BindingOperations.SetBinding(tab, UIElement.IsEnabledProperty, original.Binding);
             }
             else if (ReferenceEquals(original.LocalValue, DependencyProperty.UnsetValue))
             {
