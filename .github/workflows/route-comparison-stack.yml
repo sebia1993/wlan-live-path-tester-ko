@@ -1,0 +1,118 @@
+name: Route Comparison Stack CI
+
+on:
+  pull_request:
+    paths:
+      - "src/WlanLivePathTester.Core/Proxy/**"
+      - "src/WlanLivePathTester.Core/Routing/**"
+      - "src/WlanLivePathTester.Core/Reporting/**"
+      - "src/WlanLivePathTester.Windows/Routing/**"
+      - "src/WlanLivePathTester.App/**"
+      - "tests/WlanLivePathTester.WindowsSmoke/**"
+      - "tests/WlanLivePathTester.ReportSmoke/**"
+      - "docs/INTERNAL_PROXY_ROUTE_COMPARISON_*.md"
+      - "scripts/test-route-comparison-stack-contract.ps1"
+      - ".github/workflows/route-comparison-stack.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/WlanLivePathTester.Core/Proxy/**"
+      - "src/WlanLivePathTester.Core/Routing/**"
+      - "src/WlanLivePathTester.Core/Reporting/**"
+      - "src/WlanLivePathTester.Windows/Routing/**"
+      - "src/WlanLivePathTester.App/**"
+      - "tests/WlanLivePathTester.WindowsSmoke/**"
+      - "tests/WlanLivePathTester.ReportSmoke/**"
+      - "docs/INTERNAL_PROXY_ROUTE_COMPARISON_*.md"
+      - "scripts/test-route-comparison-stack-contract.ps1"
+      - ".github/workflows/route-comparison-stack.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: route-comparison-stack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: source-build-smoke-package
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate route comparison source contract
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\test-route-comparison-stack-contract.ps1
+
+      - name: Verify release build and smoke tests
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\verify-release.ps1
+          -Configuration Release
+
+      - name: Build self-contained release assets
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\build-release.ps1
+          -Version 0.1.0-ci.route-comparison
+          -OutputRoot .\artifacts\route-comparison-release
+
+      - name: Validate release package
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\test-release-package.ps1
+          -Version 0.1.0-ci.route-comparison
+          -OutputRoot .\artifacts\route-comparison-release
+
+      - name: Create source contract diagnostics on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $paths = @(
+              '.\src\WlanLivePathTester.Core\Routing\InternalProxyRouteComparisonRun.cs',
+              '.\src\WlanLivePathTester.Windows\Routing\InternalProxyRouteComparisonCoordinator.cs',
+              '.\src\WlanLivePathTester.Core\Reporting\InternalProxyRouteComparisonRunFindingMapper.cs',
+              '.\src\WlanLivePathTester.Core\Reporting\InternalProxyRouteComparisonRunSnapshotMapper.cs',
+              '.\src\WlanLivePathTester.Core\Reporting\InternalProxyRouteComparisonRunReportWriter.cs',
+              '.\src\WlanLivePathTester.Core\Reporting\InternalProxyRouteComparisonRunTextRenderer.cs',
+              '.\src\WlanLivePathTester.App\MainWindow.RouteComparisonCoordinator.cs'
+          )
+          $rows = foreach ($path in $paths) {
+              [pscustomobject]@{
+                  Path = $path
+                  Exists = Test-Path -LiteralPath $path -PathType Leaf
+                  Length = if (Test-Path -LiteralPath $path -PathType Leaf) {
+                      (Get-Item -LiteralPath $path).Length
+                  } else {
+                      0
+                  }
+              }
+          }
+          $rows | Format-Table -AutoSize | Out-String |
+              Set-Content -LiteralPath .\route-comparison-source-diagnostics.txt -Encoding utf8
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: route-comparison-source-diagnostics
+          path: route-comparison-source-diagnostics.txt
+          if-no-files-found: ignore
+          retention-days: 3
