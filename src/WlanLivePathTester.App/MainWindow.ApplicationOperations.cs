@@ -8,6 +8,8 @@ public partial class MainWindow
         _applicationOperations = new();
     private ApplicationOperationLease?
         _routeComparisonOperationLeaseV3;
+    private ApplicationOperationLease?
+        _routeReportOperationLeaseV2;
 
     internal ApplicationOperationSnapshot
         CurrentApplicationOperation =>
