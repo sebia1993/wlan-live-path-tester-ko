@@ -6,12 +6,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
 $resolvedZip = [System.IO.Path]::GetFullPath($PortableZip)
 if (-not (Test-Path -LiteralPath $resolvedZip -PathType Leaf)) {
     throw "Portable ZIP not found: $resolvedZip"
 }
-
 $requiredEntries = @(
     'docs/STRUCTURED_OBSERVATION_TERMINATION.md',
     'docs/UNIFIED_OBSERVATION_TERMINATION_REPORTING.md',
@@ -25,17 +23,16 @@ $requiredEntries = @(
     'docs/OBSERVATION_POWER_TRANSITIONS.md',
     'docs/OBSERVATION_COMBINED_DISRUPTIONS.md',
     'docs/WLAN_IDENTITY_CONTINUITY.md',
-    'docs/RELEASE_NOTES_0.1.0-alpha.10.md'
+    'docs/RELEASE_NOTES_0.1.0-alpha.10.md',
+    'docs/INTERNAL_PROXY_ROUTE_COMPARISON_COORDINATOR_V2.md',
+    'docs/INTERNAL_PROXY_ROUTE_COMPARISON_RUN_FINDINGS_V2.md',
+    'docs/INTERNAL_PROXY_ROUTE_COMPARISON_UI_V3.md',
+    'docs/ROUTE_COMPARISON_REPORT_EXPORT.md'
 )
-
-$duplicateRequirements = @($requiredEntries |
-    Group-Object |
-    Where-Object { $_.Count -gt 1 })
-if ($duplicateRequirements.Count -gt 0) {
-    $names = @($duplicateRequirements | ForEach-Object { $_.Name })
-    throw "Observation guide requirement list contains duplicates: $($names -join ', ')"
+$duplicates = @($requiredEntries | Group-Object | Where-Object { $_.Count -gt 1 })
+if ($duplicates.Count -gt 0) {
+    throw 'Observation guide requirement list contains duplicates.'
 }
-
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedZip)
 try {
@@ -45,23 +42,20 @@ try {
         if ($entriesByNormalizedName.ContainsKey($normalizedName)) {
             throw "Portable ZIP contains duplicate entry: $normalizedName"
         }
-
         $entriesByNormalizedName[$normalizedName] = $entry
     }
-
     foreach ($requiredEntry in $requiredEntries) {
         if (-not $entriesByNormalizedName.ContainsKey($requiredEntry)) {
             throw "Portable ZIP is missing observation document: $requiredEntry"
         }
-
         $entry = $entriesByNormalizedName[$requiredEntry]
+        if ($entry.FullName.Replace('\', '/') -cne $requiredEntry) {
+            throw "Portable ZIP document path has incorrect case: $requiredEntry"
+        }
         if ($entry.Length -le 0) {
             throw "Observation document is empty in Portable ZIP: $requiredEntry"
         }
     }
-
     Write-Host "Observation document package validation passed: $($requiredEntries.Count) documents" -ForegroundColor Green
 }
-finally {
-    $archive.Dispose()
-}
+finally { $archive.Dispose() }
