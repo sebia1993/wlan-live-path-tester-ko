@@ -14,7 +14,8 @@ $tests = @(
     'tests\WlanLivePathTester.ProxyAuthSmoke\WlanLivePathTester.ProxyAuthSmoke.csproj',
     'tests\WlanLivePathTester.MeasurementSmoke\WlanLivePathTester.MeasurementSmoke.csproj',
     'tests\WlanLivePathTester.ObservationSmoke\WlanLivePathTester.ObservationSmoke.csproj',
-    'tests\WlanLivePathTester.ReportSmoke\WlanLivePathTester.ReportSmoke.csproj'
+    'tests\WlanLivePathTester.ReportSmoke\WlanLivePathTester.ReportSmoke.csproj',
+    'tests\WlanLivePathTester.UiOperationSmoke\WlanLivePathTester.UiOperationSmoke.csproj'
 )
 
 function Invoke-CheckedCommand {

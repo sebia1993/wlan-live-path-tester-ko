@@ -1,149 +1,126 @@
 # 구현 상태
 
-기준일: 2026-09-04
+소스 상태 갱신일: 2026-09-06
 
-## 릴리스 상태
+이 문서는 구현 범위와 남은 작업을 구분합니다. 소스 코드 존재, 특정 commit의 CI 성공, 공개 EXE·ZIP 배포, 사용자 회사 환경 검증은 각각 다른 완료 기준입니다.
 
-| 항목 | 현재 상태 |
-|---|---|
-| 실제 공개 최신 릴리스 | `v0.1.0-alpha.5` |
-| Release 상태 | 공개 prerelease · draft 아님 |
-| 태그 commit | `bbdad0b7ed8ffca839a83672ac1e4537bb1e29b7` |
-| 공개 자산 | Portable ZIP, single-file EXE, SHA256SUMS, THIRD_PARTY_NOTICES 정확히 4개 |
-| 게시 전 검증 | 전체 Release 빌드·모든 Smoke·감사·패키지 검사 성공 |
-| 게시 후 검증 | GitHub API의 자산 이름·크기·SHA-256 digest 확인 완료 · 재다운로드 자동 검증 추가 중 |
-| 코드 서명 | 미적용 · SHA-256과 GitHub Release 출처로 확인 |
+## 최신 작업: 공통 작업 수명의 WPF 연결
 
-릴리스 링크: [`v0.1.0-alpha.5`](https://github.com/sebia1993/wlan-live-path-tester-ko/releases/tag/v0.1.0-alpha.5)
+기반 변경:
 
-## 전체 기능 상태
+- #119: Core `ApplicationOperationCoordinator`, 단일 lease, 취소·shutdown·idle 대기
+- #121: 내부 DIRECT–프록시 비교와 Windows 프록시 가져오기에서 Core lease 사용
+- #123: 내부·외부 다운로드, 기존 프록시 경로 판정, 브라우저 관찰을 같은 coordinator에 연결
 
-| 영역 | 상태 | 자동 검증 | 실제 환경 검증 |
-|---|---|---|---|
-| 저장소·솔루션·보안 경계 | 완료 | Windows CI·감사 | 불필요 |
-| Native WLAN 현재 연결 수집 | 완료 | Native API Smoke | 사용자 담당 |
-| 수동 프록시·PAC·WPAD 경로 판정 | 완료 | 합성 경로·파서 | 사용자 담당 |
-| HTTP 407 Negotiate/NTLM | 완료 | 루프백 407 Smoke | 사용자 담당 |
-| 내부망 DIRECT 다운로드 | 완료 | 루프백 측정 | 사용자 담당 |
-| 프록시 경유 외부 다운로드 | 완료 | 합성 프록시 | 사용자 담당 |
-| 승인 대상·리다이렉트 정책 | 완료 | 엄격 JSON·Core 경계 | 로컬 설정 배포 확인 |
-| 관리자 ProgramData 강제 정책 | 완료 | fail-closed 정책 시험 | ACL·GPO 확인 |
-| 반복 측정·대표값 | 완료 | 중앙값·편차·신뢰도 | 실제 경로 반복 측정 |
-| 브라우저 다운로드 관찰 | 완료 | 카운터·선택·ID 고정 Smoke | 사용자 담당 |
-| 물리 Wi-Fi·VPN·가상 NIC 진단 | 완료 | 분류·모호성 시험 | 사용자 담당 |
-| WLAN과 로컬 NIC 대응 | 완료 | GUID·설명 대응 시험 | 사용자 담당 |
-| 일반·반복·인터페이스·어댑터 보고서 | 완료 | JSON·CSV·HTML·SHA-256 | 공유 전 사용자 검토 |
-| win-x64 self-contained 패키지 | 완료 | ZIP·single-file 검사 | 사용자 실행 확인 |
-| 게시된 Release 바이트 재검증 | 개발 중 | alpha.5 기준 workflow 회귀 검사 예정 | 불필요 |
+#123은 최신 기반의 경로·프록시 가져오기 코드와 테스트를 그대로 유지하고 단일 `MainWindow._applicationOperations`를 UI adapter에 주입합니다. 두 개의 독립 전역 잠금을 만들지 않습니다.
 
-## 브라우저 관찰의 현재 경계
+| 항목 | 이번 구현 범위 | 확인 방법 |
+|---|---|---|
+| 내부·외부 다운로드 | 공통 lease 획득 후 실행, 취소 후 실제 완료까지 유지 | 합성 작업을 실제 MainWindow 진입점에 주입 |
+| 기존 프록시 판정 | 동기 WinHTTP 반환까지 lease 유지 | 다른 작업 중 실제 클릭 진입점이 resolver를 호출하지 않는지 검사 |
+| 브라우저 관찰 | 동일 lease 사용, 이전 세션의 늦은 진행 알림 무시 | lease 수명·stale callback 조건 검사 |
+| 탭 상태 | 다른 탭·늦게 추가된 탭 잠금, 기존 비활성·상속·binding 복원 | 실제 WPF TabControl/Binding 테스트 |
+| 창 종료 | UI를 막지 않고 취소 요청 및 실제 완료 대기 | 실제 MainWindow Closing/Closed와 합성 작업 |
+| 기존 경로 비교·가져오기 | #121의 같은 Core coordinator 사용 | 양방향 중복 실행 거부 |
+| 전체 앱 상태 이행 | 아직 완료 아님 | 아래 남은 개발 작업 참조 |
 
-관찰 시작 시 선택된 물리 Wi-Fi의 카운터 ID를 고정합니다.
+검증 프로젝트 `WlanLivePathTester.UiOperationSmoke`를 `verify-release.ps1`에 추가했습니다. 작성된 테스트를 실행 성공과 혼동하지 않도록 PR의 **최종 head SHA**에 해당하는 Windows CI·Release Package CI 결과를 확인해야 합니다. 실제 회사 환경 검증은 사용자가 수행합니다.
 
-```text
-Native WLAN 연결
-   ↓ identity 보완
-물리 Wi-Fi 후보 선택
-   ↓ 시작 ID 고정
-고정 ID의 카운터만 반복 조회
-   ├─ 같은 ID + BSSID 변경: 로밍으로 기록하고 계속
-   ├─ Native WLAN ID 변경: AdapterChanged
-   ├─ 고정 NIC 사용 불가: AdapterUnavailable
-   └─ 공급자 ID 불일치: CounterProviderMismatch
-```
+자세한 동작은 `docs/APPLICATION_OPERATION_UI_INTEGRATION.md`와 `docs/APPLICATION_OPERATION_COORDINATOR.md`에 기록합니다.
 
-후속 샘플에서는 설명이 같거나 다른 활성 Wi-Fi가 존재하더라도 자동 전환하지 않습니다. 중단 전에 수집된 정상 샘플은 요약에 보존할 수 있지만 전용 종료 상태를 일반 성공으로 바꾸지 않습니다.
+## 기존 구현 영역
 
-## 어댑터 환경 진단
+아래는 소스에 구현된 영역이며 회사 환경 호환성을 일괄 보증하는 목록이 아닙니다.
 
-다음 로컬 인터페이스 범주를 구분합니다.
+| 영역 | 소스 구현 | 실제 확인 |
+|---|---|---|
+| Native WLAN 연결 수집 | SSID·BSSID·RSSI·채널·PHY·링크 속도 | Windows 드라이버·권한·WLAN 서비스 |
+| 내부 DIRECT 다운로드 | 사용자 실행 HEAD/GET·수신량·TTFB·처리량 | 승인된 내부 서버와 정책 |
+| 외부 프록시 다운로드 | 프록시 경유 HEAD/GET·407 통합 인증 | 회사 PAC/WPAD·Negotiate/NTLM·TLS 검사 |
+| 대상 정책 | 사용자/Portable 설정과 관리자 ProgramData 우선 정책 | 파일 ACL·GPO·승인 대상 |
+| 반복 측정 | 예열·중앙값·편차·신뢰도 | 실제 내부·외부 경로 반복 |
+| 브라우저 관찰 | 물리 Wi-Fi 카운터 고정·연속성·구조화 종료 원인 | 브라우저 다운로드·로밍·NIC 제거·절전 |
+| 로컬 어댑터 진단 | 물리 Wi-Fi·유선·VPN·터널·가상 NIC 분류 | 회사 VPN·보안 에이전트별 차이 |
+| 로컬 경로 비교 | 내부 대상·프록시 후보의 Windows 인터페이스 비교 | IPv4/IPv6·유선/Wi-Fi/VPN 경로 |
+| Windows 프록시 가져오기 | 로컬 설정 읽기 및 명시 동의한 PAC/WPAD 판정 | 회사별 자동 프록시 정책 |
+| 전용 경로 보고서 | 안전 모델·취소 가능한 로컬 저장·지연 종료 | 사용자 공유 전 개인정보 확인 |
+| 일반·반복·관찰·어댑터 보고서 | 로컬 JSON·CSV·HTML·SHA-256 | 실제 데이터 마스킹 검토 |
+| self-contained 배포 | win-x64 Portable ZIP·single-file EXE 빌드 경로 | 사용자 PC에서 실행·SmartScreen·EDR |
 
-- 물리 Wi-Fi와 물리 Ethernet
-- Wi-Fi Direct·Hosted Network·SoftAP
-- VPN·터널
-- Hyper-V·VMware·VirtualBox·WSL·Docker
-- Bluetooth PAN, Loopback와 기타 가상 인터페이스
+## 배포 상태와 소스 상태
 
-다중 물리 Wi-Fi, 다중 기본 게이트웨이, 유선·무선 동시 기본 경로와 활성 VPN·가상 NIC를 경고합니다. 전체 인터페이스 GUID, IP, MAC, DNS와 게이트웨이 주소 원문은 구조화 보고서에 포함하지 않습니다.
+이번 작업은 소스와 자동 검증 연결입니다. PR 병합만으로 기존 Release EXE·ZIP이 바뀌지는 않습니다. 현재 공개 버전·자산·해시는 GitHub Release 메타데이터와 해당 릴리스 검증 실행에서 별도로 확인합니다.
+
+이 문서의 이전 2026-09-04 기록은 `v0.1.0-alpha.5`, tag commit `bbdad0b7ed8ffca839a83672ac1e4537bb1e29b7`을 기준으로 작성됐습니다. 이는 **과거 배포 기록**이지 현재 최신 버전 선언이 아닙니다.
+
+유지할 배포 계약:
+
+- Portable ZIP
+- single-file EXE
+- SHA256SUMS.txt
+- THIRD_PARTY_NOTICES.md
+
+새 배포는 소스·Smoke·통신 경계 감사·패키지 검사 후 게시하고, 다운로드한 자산의 크기·SHA-256·ZIP 필수 문서·BUILD_INFO SourceRevision·태그 대상을 재검증해야 합니다. 코드 서명은 인증서가 제공되지 않은 상태에서 적용 완료로 표시하지 않습니다.
 
 ## 자동 검증 범위
 
-- .NET 10 Release 전체 빌드와 경고의 오류 처리
-- Core 결정론적 SelfTest
-- Native WLAN API 및 서비스·권한 오류 경계
-- WLAN identity와 로컬 `NetworkInterface` 대응
-- 물리 Wi-Fi·VPN·가상 NIC 분류와 다중 후보 모호성
-- Bluetooth PAN과 기업 VPN·터널 식별 회귀
-- 수동 프록시·PAC·WPAD와 407 인증 상태 머신
-- 내부 DIRECT·합성 외부 PROXY HEAD/GET 측정
-- 수신량 상한, 다중 스트림, 리다이렉트, HTTP 오류와 시간초과
-- 승인 대상 JSON, 관리자 정책과 Core 실행 경계
-- 브라우저 관찰 처리량·BSSID 변경·정지·급락 계산
-- 정확 ID 강제 선택과 다른 NIC fallback 차단
-- 초기 WLAN·카운터 충돌, 실행 중 WLAN ID 변경과 공급자 불일치
-- 구조화 종료 상태의 보고서 매핑
-- 일반·반복·인터페이스·어댑터 보고서의 마스킹, CSV 수식 방지, HTML CSP와 SHA-256
-- 저장소·네트워크 통신 경계 감사
-- Portable ZIP·single-file EXE, PE 헤더, 금지 파일, 필수 문서와 경로 순회 검사
+기존 6개 프로젝트:
 
-게시 후 검증 워크플로는 다음을 추가 확인합니다.
+- Core SelfTest
+- WindowsSmoke
+- ProxyAuthSmoke
+- MeasurementSmoke
+- ObservationSmoke
+- ReportSmoke
 
-- 네 자산을 GitHub Release에서 다시 다운로드
-- 다운로드 파일 크기와 GitHub Release API `size` 일치
-- 다운로드 파일 SHA-256과 GitHub Release API `digest` 일치
-- `SHA256SUMS.txt`의 ZIP·EXE·고지 파일 해시 일치
-- 태그 commit과 Portable `BUILD_INFO.txt`의 `SourceRevision` 일치
-- Portable ZIP 필수 문서·금지 파일·경로 순회 재검사
-- Portable·single-file PE 헤더와 ProductVersion 재검사
+새 WPF UiOperationSmoke는 10개 그룹을 추가합니다.
 
-자동 HTTP 시험은 `127.0.0.1` 합성 서버와 합성 프록시만 사용합니다. GitHub Actions는 실제 외부 사이트, 회사 프록시, PAC/WPAD 또는 사내 서버에 접속하지 않습니다.
+1. 측정·프록시 판정·관찰 3×3 중복 실행 거부
+2. 기존 경로/import와 동일 coordinator 사용
+3. 늦게 추가·제거된 탭 및 listener 해제
+4. binding 변경 중 잠금·완료 후 최신 source 복원
+5. 취소 한 번·실제 완료 전 busy 유지·stale lease 격리
+6. 취소 지원/미지원 작업의 shutdown 대기
+7. 예외 시 lease와 UI 정리
+8. worker thread의 UI 상태 변경 거부
+9. 실제 측정 진입점·프록시 클릭의 중복 차단
+10. 실제 창 닫기가 작업 완료 이후에만 수행됨
 
-## 사용자가 실제 환경에서 확인할 범위
-
-- 실제 Windows 11 무선 NIC와 Native WLAN 반환값
-- Aruba 환경의 SSID·BSSID·RSSI·채널·PHY·링크 속도
-- 내장 Wi-Fi와 USB Wi-Fi 동시 활성 시 실제 연결 NIC 선택
-- 같은 NIC의 BSSID 로밍과 다른 물리 Wi-Fi 전환 구분
-- USB Wi-Fi 제거, 드라이버 재시작과 절전 복귀 시 종료 상태
-- 회사 VPN, Hyper-V, WSL, VMware와 Wi-Fi Direct 분류
-- 회사 수동 프록시·바이패스·PAC·WPAD 결과
-- 실제 HTTP 407 Negotiate/NTLM 처리
-- TLS 검사와 회사 루트 인증서
-- GPO·EDR·SmartScreen 정책
-- 내부 기준 서버의 DIRECT 경로와 충분한 성능
-- 외부 승인 URL의 프록시 경유·정책·캐시·다운로드 안정성
-- 브라우저 표시 속도와 고정 Wi-Fi 관찰값의 경향
-- 생성 보고서에 실제 사내 식별정보가 남지 않는지
-
-체크리스트는 [`docs/RELEASE_VALIDATION.md`](docs/RELEASE_VALIDATION.md)와 [`docs/BROWSER_OBSERVATION.md`](docs/BROWSER_OBSERVATION.md)를 따릅니다.
+새 UI 테스트는 실제 창을 표시하지 않고 합성 작업을 주입합니다. 실제 회사 프록시·외부 웹사이트·WLAN reader를 호출하지 않습니다. 기존 HTTP 테스트는 루프백 합성 서버·프록시를 사용합니다.
 
 ## 남은 개발 작업
 
-### P0
+### P0 — 공통 작업 수명 이행 마무리
 
-1. **게시된 Release 재다운로드 검증 자동화 병합 및 alpha.5 실행**
-   - GitHub digest·SHA256SUMS·파일 크기·ZIP·BUILD_INFO·ProductVersion 확인
-   - 향후 `release.published` 이벤트에서 자동 실행
-   - 실패한 공개 Release는 덮어쓰지 않고 새 수정 버전으로 교체
+- 반복 측정과 일반 로컬 경로 확인을 같은 lease에 연결
+- 경로·통합·관찰·반복·어댑터 보고서 저장의 작업 수명 통일
+- 자동 어댑터 새로고침·환경 수집을 명시 실행 작업과 충돌하지 않게 통합
+- 기능별 busy Boolean·peer-tab 잠금·Closing handler의 중복 정리
+- Loaded 이후 늦은 탭 생성, 상태 변경, 취소와 창 종료가 겹치는 통합 회귀 검사
 
-### P1
+기존 #121 경로 비교·Windows 프록시 가져오기 자체를 미구현으로 다시 분류하지 않습니다. 남은 것은 공통 UI 상태와 종료 처리의 통합입니다.
 
-2. **비동기 WinHTTP 전송 계층**
-   - `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반으로 전환
-   - 연결·응답·본문 수신 중 안전한 즉시 취소
-   - 실제 회사 프록시의 407 재인증과 취소 경쟁 검증
-3. **목적지별 Windows 라우팅 근거**
-   - 실제 대상 또는 프록시 목적지의 route/interface metric을 로컬에서 판정
-   - IP·게이트웨이 원문을 보고서에 노출하지 않는 구조화 요약
-4. **장시간·상태 전환 안정성**
-   - 절전·재연결, USB NIC 제거, VPN 연결·해제와 가상 NIC 생성·삭제
-   - 장시간 반복 측정과 브라우저 관찰 중 이벤트 경쟁
+### P1 — 보고서 및 배포 일관성
 
-### P2
+- 최신 내부 DIRECT–프록시 비교 결과를 통합 진단 보고서에 포함하는 경로와 Finding 중복·누락 점검
+- 새 운영 문서의 Portable ZIP 포함과 패키지 계약 갱신
+- 최종 소스 CI와 별도 Release 빌드·게시 후 바이트 재검증
 
-5. **Authenticode 코드 서명**
-   - 인증서·타임스탬프 확보 후 빌드 서명과 CI 검증
-6. **실환경 결과 기반 호환성 수정**
-   - WLAN 드라이버, PAC/WPAD, 407, TLS 검사와 GPO·EDR 차이 반영
-7. **정식 `v0.1.0` 전환**
-   - 실제 Aruba WLAN·회사 프록시·다중 NIC·보고서 마스킹 검증 완료 후 진행
+### P1 — 비동기 WinHTTP 전송과 상태 변화
+
+- `WINHTTP_FLAG_ASYNC`와 상태 callback 기반 안전한 즉시 취소
+- 네이티브 호출 완료·취소·407 재인증의 handle 수명 검증
+- 절전·재연결·USB NIC 제거·VPN 전환·장시간 반복 측정 중 이벤트 경쟁
+- 주소별 라우팅·인터페이스 metric의 추가 근거가 필요할 때 개인정보 없는 확장
+
+### P2 — 서명 및 실제 환경 피드백
+
+- Authenticode 인증서·타임스탬프 확보 후 서명 및 CI 확인
+- 사용자의 회사 Windows 11·Aruba·PAC/WPAD·407·TLS 검사·GPO·EDR 검증 결과 반영
+- 실환경 검증과 미해결 고우선 작업 정리 후 정식 v0.1.0 전환 판단
+
+## 사용자 실환경 검증
+
+내장·USB Wi-Fi가 함께 있을 때 정확한 NIC 선택, 같은 NIC에서의 BSSID 로밍, NIC 제거·드라이버 재시작·절전 복귀, 회사 VPN 및 IPv4/IPv6 분리, 수동 프록시·PAC·WPAD·407, TLS 검사, GPO·EDR·SmartScreen과 실제 보고서 개인정보를 확인합니다.
+
+추가로 실제 다운로드·브라우저 관찰 중 취소/창 닫기, 빠른 재시작, 프록시 판정이 늦게 끝나는 상황에서 새 작업이 차단되고 최종 UI 상태가 복원되는지 확인합니다. 합성 CI 통과를 이 검증의 대체 근거로 사용하지 않습니다.

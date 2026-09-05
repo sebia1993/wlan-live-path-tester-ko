@@ -4,8 +4,30 @@
 
 ## [Unreleased]
 
+### Added
+
+- 공통 Core 작업 조정기에 내부·외부 다운로드, 기존 프록시 경로 판정, 브라우저 관찰 WPF 실행 경로 연결
+- 기존 내부 DIRECT–프록시 비교·Windows 프록시 가져오기와 동일한 coordinator 인스턴스 공유
+- 활성 작업 외 탭 및 늦게 생성된 탭 잠금, 원래 비활성 상태·상속·binding 복원
+- 취소 후 실제 작업 완료까지 busy 유지 및 Dispatcher 비차단 창 종료 대기
+- 이전 관찰의 늦은 Progress callback이 새 결과를 덮어쓰지 않는 세션 확인
+- 실제 WPF Dispatcher와 합성 delegate를 사용하는 `UiOperationSmoke` 10개 검증 그룹 및 Release 검증 연결
+- `docs/APPLICATION_OPERATION_UI_INTEGRATION.md`에 적용 범위와 남은 이행 작업 명시
+
+### Changed
+
+- 사용자 토큰 취소로 발생한 다운로드 `OperationCanceledException`을 일반 오류가 아닌 취소 완료로 표시
+- 탭 상태 복원을 Core lease 해제보다 먼저 수행해 늦은 정리가 새 작업을 해제하지 않도록 처리
+- 경로 비교·가져오기·보고서의 기존 수명 및 종료 처리는 단계적 이행 동안 유지
+
+### Security
+
+- 작업 조정 UI와 합성 검증에 런타임 패키지, AI·로컬 AI, 외부 분석 API, 텔레메트리, 업로드 또는 자동 업데이트를 추가하지 않음
+- 동기 WinHTTP 실행 중 네이티브 핸들을 강제로 닫지 않으며 실제 호출 반환 전에 완료로 처리하지 않음
+
 ### Planned
 
+- 반복 측정·로컬 경로 확인·보고서 저장·자동 어댑터 새로고침의 공통 작업 수명 연결
 - `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반 비동기 WinHTTP 전송 계층
 - 목적지별 Windows route·interface metric을 개인정보 노출 없이 요약하는 로컬 경로 판정
 - Authenticode 인증서 확보 후 빌드 서명과 서명 검증
