@@ -16,6 +16,17 @@ internal static class Program
             return 2;
         }
 
+        // The importer tests await worker threads; never run them in a ModuleInitializer.
+        try
+        {
+            WindowsRouteProxyImporterTests.RunAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"FAIL Windows proxy import: {exception.Message}");
+            return 1;
+        }
+
         if (!CheckProxySettingsBoundary())
         {
             return 1;

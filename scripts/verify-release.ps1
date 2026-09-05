@@ -37,6 +37,10 @@ try {
         powershell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'scripts\test-route-comparison-ui-v3-contract.ps1')
     }
+    Invoke-CheckedCommand -Description 'Validate Windows proxy import consent and UI contract' -Command {
+        powershell -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $root 'scripts\test-windows-proxy-import-contract.ps1')
+    }
     Invoke-CheckedCommand -Description 'Validate report cancellation and deferred-close UI contract' -Command {
         powershell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'scripts\test-route-report-save-ui-contract.ps1')

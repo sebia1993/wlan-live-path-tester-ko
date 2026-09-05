@@ -27,8 +27,13 @@ internal static class RouteComparisonV3Bootstrap
         }
 
         window.EnsureRouteComparisonTabV3();
+        window.EnsureRouteProxyImportControls();
         _ = window.Dispatcher.BeginInvoke(
             DispatcherPriority.ContextIdle,
-            () => window.EnsureRouteComparisonTabV3());
+            () =>
+            {
+                window.EnsureRouteComparisonTabV3();
+                window.EnsureRouteProxyImportControls();
+            });
     }
 }

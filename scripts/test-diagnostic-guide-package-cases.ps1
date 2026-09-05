@@ -25,6 +25,7 @@ $required = @(
     'docs/INTERNAL_PROXY_ROUTE_COMPARISON_COORDINATOR_V2.md',
     'docs/INTERNAL_PROXY_ROUTE_COMPARISON_RUN_FINDINGS_V2.md',
     'docs/INTERNAL_PROXY_ROUTE_COMPARISON_UI_V3.md',
+    'docs/WINDOWS_ROUTE_PROXY_IMPORT.md',
     'docs/ROUTE_COMPARISON_REPORT_EXPORT.md'
 )
 Add-Type -AssemblyName System.IO.Compression
@@ -38,6 +39,7 @@ function Assert-PackageCase {
     $spec = @($required | ForEach-Object { [pscustomobject]@{ Name = $_; Content = 'synthetic guide' } })
     switch ($Mode) {
         'missing' { $spec = @($spec | Where-Object { $_.Name -ne 'docs/ROUTE_COMPARISON_REPORT_EXPORT.md' }) }
+        'missing-import' { $spec = @($spec | Where-Object { $_.Name -ne 'docs/WINDOWS_ROUTE_PROXY_IMPORT.md' }) }
         'empty' { $spec[-1].Content = '' }
         'wrong-case' { $spec[-1].Name = $spec[-1].Name.ToLowerInvariant() }
         'duplicate' { $spec += [pscustomobject]@{ Name = $required[-1]; Content = 'duplicate' } }
@@ -73,12 +75,13 @@ try {
     Assert-PackageCase -Mode 'valid' -ExpectedFailure ''
     Assert-PackageCase -Mode 'backslash' -ExpectedFailure ''
     Assert-PackageCase -Mode 'missing' -ExpectedFailure 'missing observation document'
+    Assert-PackageCase -Mode 'missing-import' -ExpectedFailure 'missing observation document'
     Assert-PackageCase -Mode 'empty' -ExpectedFailure 'document is empty'
     Assert-PackageCase -Mode 'wrong-case' -ExpectedFailure 'incorrect case'
     Assert-PackageCase -Mode 'duplicate' -ExpectedFailure 'duplicate entry'
     Assert-PackageCase -Mode 'case-collision' -ExpectedFailure 'duplicate entry'
     Assert-PackageCase -Mode 'separator-collision' -ExpectedFailure 'duplicate entry'
-    Write-Host 'All 8 diagnostic guide package cases passed.'
+    Write-Host 'All 9 diagnostic guide package cases passed.'
 }
 finally {
     # This directory is a randomly named test fixture, never a user report directory.
