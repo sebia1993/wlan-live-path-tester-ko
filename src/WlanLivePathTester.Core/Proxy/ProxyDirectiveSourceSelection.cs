@@ -128,6 +128,17 @@ public static class ProxyDirectiveSourceSelectionPolicy
             bool targetDecisionIsDirect,
             string? targetSpecificDirective)
     {
+        // Only parse the authoritative source, and validate it before Trim.
+        // Otherwise control-only DIRECT input could become a canonical DIRECT.
+        ProxyDirectiveParseResult rawParsed =
+            ProxyRouteDirectiveParser.Parse(targetSpecificDirective);
+        if (rawParsed.Status == ProxyDirectiveParseStatus.InvalidInput)
+        {
+            return InvalidTarget(
+                rawParsed,
+                "대상별 프록시 판정 원문을 안전하게 해석하지 못했습니다.");
+        }
+
         string value = (targetSpecificDirective ?? string.Empty).Trim();
         if (targetDecisionIsDirect)
         {
@@ -144,8 +155,7 @@ public static class ProxyDirectiveSourceSelectionPolicy
                     "대상별 PAC/WPAD 판정이 DIRECT이므로 프록시 엔드포인트를 추정하거나 수동 프록시로 대체하지 않습니다.");
             }
 
-            ProxyDirectiveParseResult parsed =
-                ProxyRouteDirectiveParser.Parse(value);
+            ProxyDirectiveParseResult parsed = rawParsed;
             bool consistent = parsed.HasUsableDirective
                 && parsed.Directives.Any(directive => directive.IsDirect)
                 && !parsed.HasProxyEndpoint
@@ -168,8 +178,7 @@ public static class ProxyDirectiveSourceSelectionPolicy
                 "대상별 PAC/WPAD 판정에서 DIRECT만 확인했습니다. 프록시 엔드포인트를 추정하거나 수동 프록시로 대체하지 않습니다.");
         }
 
-        ProxyDirectiveParseResult targetParsed =
-            ProxyRouteDirectiveParser.Parse(value);
+        ProxyDirectiveParseResult targetParsed = rawParsed;
         if (!targetParsed.HasProxyEndpoint)
         {
             return InvalidTarget(
@@ -197,9 +206,8 @@ public static class ProxyDirectiveSourceSelectionPolicy
     private static ProxyDirectiveSourceSelectionResult SelectManual(
         string? manualProxyDirective)
     {
-        string value = (manualProxyDirective ?? string.Empty).Trim();
         ProxyDirectiveParseResult parsed =
-            ProxyRouteDirectiveParser.Parse(value);
+            ProxyRouteDirectiveParser.Parse(manualProxyDirective);
         if (!parsed.HasUsableDirective)
         {
             return InvalidManual(
@@ -207,6 +215,8 @@ public static class ProxyDirectiveSourceSelectionPolicy
                 "수동 프록시가 설정됨으로 표시됐지만 안전하게 사용할 수 있는 프록시 또는 DIRECT 지시문을 확인하지 못했습니다.");
         }
 
+        // The parser has already checked the original length and characters.
+        string value = (manualProxyDirective ?? string.Empty).Trim();
         bool hasErrors = HasErrors(parsed);
         if (!parsed.HasProxyEndpoint)
         {

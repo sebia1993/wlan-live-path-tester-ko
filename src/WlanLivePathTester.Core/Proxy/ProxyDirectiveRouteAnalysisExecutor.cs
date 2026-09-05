@@ -147,6 +147,11 @@ public static class ProxyDirectiveRouteAnalysisExecutor
                     directiveText,
                     cancellationToken)
                 .ConfigureAwait(false);
+
+            // A cooperative/native adapter can return normally after observing
+            // cancellation. Do not publish that late value as a completed run.
+            // Await the actual callback completion; do not abandon native work.
+            cancellationToken.ThrowIfCancellationRequested();
             if (analysis is null)
             {
                 return CreateResult<TAnalysis>(

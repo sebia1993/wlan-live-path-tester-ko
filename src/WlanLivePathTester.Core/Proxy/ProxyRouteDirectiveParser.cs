@@ -12,16 +12,9 @@ public static class ProxyRouteDirectiveParser
 
     public static ProxyDirectiveParseResult Parse(string? input)
     {
-        string value = (input ?? string.Empty).Trim();
-        if (value.Length == 0)
-        {
-            return new ProxyDirectiveParseResult(
-                ProxyDirectiveParseStatus.Empty,
-                Array.Empty<ProxyRouteDirective>(),
-                Array.Empty<ProxyDirectiveIssue>(),
-                "프록시 지시문이 비어 있습니다.");
-        }
-
+        // Validate the original text: Trim can erase trailing control characters
+        // and must not turn an overlong input into an accepted directive.
+        string value = input ?? string.Empty;
         if (value.Length > MaximumInputLength)
         {
             return InvalidGlobal(
@@ -34,6 +27,16 @@ public static class ProxyRouteDirectiveParser
             return InvalidGlobal(
                 "CONTROL_CHARACTER",
                 "프록시 지시문에 줄바꿈·탭·NUL과 같은 제어 문자를 사용할 수 없습니다.");
+        }
+
+        value = value.Trim();
+        if (value.Length == 0)
+        {
+            return new ProxyDirectiveParseResult(
+                ProxyDirectiveParseStatus.Empty,
+                Array.Empty<ProxyRouteDirective>(),
+                Array.Empty<ProxyDirectiveIssue>(),
+                "프록시 지시문이 비어 있습니다.");
         }
 
         string[] segments = value.Split(';');
