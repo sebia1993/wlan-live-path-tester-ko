@@ -108,7 +108,7 @@ public static partial class
                     .ToArray(),
             ProxyInterfaceCategories:
                 comparison.ProxyInterfaceCategories
-                    .Where(Enum.IsDefined)
+                    .Where(value => Enum.IsDefined(value))
                     .Select(value => value.ToString())
                     .Distinct(StringComparer.Ordinal)
                     .OrderBy(value => value, StringComparer.Ordinal)
