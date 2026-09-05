@@ -409,8 +409,8 @@ internal static class ProxyDirectiveRouteAnalysisPlanV3Tests
                    StringComparison.Ordinal),
             "실행 JSON에는 안전한 고정 상태와 후보 수가 필요합니다.");
         Ensure(!executionJson.Contains(
-                "Analysis",
-                StringComparison.Ordinal),
+                "\"analysis\":",
+                StringComparison.OrdinalIgnoreCase),
             "분석 payload 속성 자체를 기본 JSON에 포함하면 안 됩니다.");
     }
 
