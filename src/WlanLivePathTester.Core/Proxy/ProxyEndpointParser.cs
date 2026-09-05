@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
@@ -28,7 +29,8 @@ public enum ProxyEndpointDecision
     Unknown,
     Direct,
     Proxy,
-    ProxyWithDirectFallback
+    ProxyWithDirectFallback,
+    DirectWithProxyAlternatives
 }
 
 public sealed record ProxyEndpointCandidate(
@@ -43,8 +45,7 @@ public sealed record ProxyEndpointCandidate(
     {
         get
         {
-            string applicability = string.IsNullOrWhiteSpace(
-                AppliesToScheme)
+            string applicability = string.IsNullOrWhiteSpace(AppliesToScheme)
                 ? "모든 HTTP(S) 대상"
                 : $"{AppliesToScheme} 대상";
             string transport = Transport switch
@@ -56,8 +57,7 @@ public sealed record ProxyEndpointCandidate(
                 ProxyEndpointTransport.Socks5 => "SOCKS5 proxy",
                 _ => "proxy transport 미지정"
             };
-            string port = Port?.ToString(
-                CultureInfo.InvariantCulture)
+            string port = Port?.ToString(CultureInfo.InvariantCulture)
                 ?? "미지정";
             return $"프록시 후보 {Sequence} · {applicability} · {transport} · host#{HostFingerprint} · port {port}";
         }
@@ -70,27 +70,33 @@ public sealed record ProxyEndpointParseResult(
     ProxyEndpointDecision Decision,
     string? TargetScheme,
     IReadOnlyList<ProxyEndpointCandidate> Endpoints,
+    IReadOnlyList<int> DirectSequences,
     bool DirectFallback,
     int ParsedEndpointCount,
     int IgnoredEndpointCount,
     int DuplicateEndpointCount,
+    int DuplicateDirectCount,
     int RejectedTokenCount,
+    int TruncatedTokenCount,
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> Errors)
 {
+    public bool DirectPresent => DirectSequences.Count > 0;
+
     public bool IsUsable =>
         Errors.Count == 0
         && Decision is ProxyEndpointDecision.Direct
             or ProxyEndpointDecision.Proxy
-            or ProxyEndpointDecision.ProxyWithDirectFallback;
+            or ProxyEndpointDecision.ProxyWithDirectFallback
+            or ProxyEndpointDecision.DirectWithProxyAlternatives;
 }
 
 public static class ProxyEndpointParser
 {
-    private const int MaximumInputLength = 16 * 1024;
-    private const int MaximumTokenCount = 64;
-    private const int MaximumEndpointCount = 32;
-    private const int FingerprintLength = 10;
+    public const int MaximumInputLength = 16 * 1024;
+    public const int MaximumTokenCount = 64;
+    public const int MaximumEndpointCount = 32;
+    public const int FingerprintLength = 10;
 
     public static ProxyEndpointParseResult Parse(
         string? value,
@@ -99,97 +105,72 @@ public static class ProxyEndpointParser
         string input = (value ?? string.Empty).Trim();
         List<string> warnings = [];
         List<string> errors = [];
+        string? targetScheme = ResolveTargetScheme(targetUri, errors);
 
-        string? targetScheme = ResolveTargetScheme(
-            targetUri,
-            errors);
         if (errors.Count > 0)
         {
-            return EmptyResult(
-                inputPresent: input.Length > 0,
-                ProxyEndpointSourceKind.Unknown,
-                targetScheme,
-                warnings,
-                errors);
+            return EmptyResult(input.Length > 0, targetScheme, warnings, errors);
         }
 
         if (input.Length == 0)
         {
             warnings.Add(
                 "프록시 경로 문자열이 비어 있어 프록시 엔드포인트를 확인하지 않았습니다.");
-            return EmptyResult(
-                inputPresent: false,
-                ProxyEndpointSourceKind.Unknown,
-                targetScheme,
-                warnings,
-                errors);
+            return EmptyResult(false, targetScheme, warnings, errors);
         }
 
         if (input.Length > MaximumInputLength)
         {
             errors.Add(
                 $"프록시 경로 문자열은 {MaximumInputLength}자를 초과할 수 없습니다.");
-            return EmptyResult(
-                inputPresent: true,
-                ProxyEndpointSourceKind.Unknown,
-                targetScheme,
-                warnings,
-                errors);
+            return EmptyResult(true, targetScheme, warnings, errors);
         }
 
-        IReadOnlyList<RawProxyToken> tokens = Tokenize(
-            input,
-            warnings);
-        ProxyEndpointSourceKind sourceKind = InferSourceKind(
-            tokens);
+        TokenizationResult tokenization = Tokenize(input);
+        if (tokenization.TruncatedTokenCount > 0)
+        {
+            warnings.Add(
+                $"프록시 항목은 최대 {MaximumTokenCount}개까지만 해석하며 나머지 {tokenization.TruncatedTokenCount}개는 사용하지 않았습니다.");
+        }
+
+        ProxyEndpointSourceKind sourceKind = InferSourceKind(tokenization.Tokens);
         if (sourceKind == ProxyEndpointSourceKind.Mixed)
         {
             warnings.Add(
                 "자동 프록시 지시문과 수동 스킴 매핑이 함께 있어 입력 순서대로 안전하게 해석했습니다.");
         }
 
-        bool directFallback = false;
-        int parsedEndpointCount = 0;
-        int ignoredEndpointCount = 0;
-        int duplicateEndpointCount = 0;
-        int rejectedTokenCount = 0;
         List<ProxyEndpointCandidate> selected = [];
-        HashSet<string> endpointKeys = new(
-            StringComparer.OrdinalIgnoreCase);
+        List<int> directSequences = [];
+        HashSet<string> endpointKeys = new(StringComparer.OrdinalIgnoreCase);
+        int parsedCount = 0;
+        int ignoredCount = 0;
+        int duplicateCount = 0;
+        int duplicateDirectCount = 0;
+        int rejectedCount = 0;
+        bool endpointLimitReported = false;
 
-        foreach (RawProxyToken token in tokens)
+        foreach (RawProxyToken token in tokenization.Tokens)
         {
-            if (token.Value.Equals(
-                    "DIRECT",
-                    StringComparison.OrdinalIgnoreCase))
+            if (token.Value.Equals("DIRECT", StringComparison.OrdinalIgnoreCase))
             {
-                directFallback = true;
+                if (directSequences.Count == 0)
+                {
+                    directSequences.Add(token.Sequence);
+                }
+                else
+                {
+                    duplicateDirectCount++;
+                }
+
                 continue;
             }
 
-            string? appliesToScheme = null;
-            ProxyEndpointTransport directiveTransport =
-                ProxyEndpointTransport.Unspecified;
-            string endpointValue;
-
-            if (TrySplitDirective(
-                    token.Value,
-                    out ProxyEndpointTransport parsedTransport,
-                    out endpointValue))
-            {
-                directiveTransport = parsedTransport;
-            }
-            else if (TrySplitManualMapping(
-                         token.Value,
-                         out string? parsedTargetScheme,
-                         out endpointValue))
-            {
-                appliesToScheme = parsedTargetScheme;
-            }
-            else
-            {
-                endpointValue = token.Value;
-            }
+            ParseTokenShape(
+                token.Value,
+                out string? appliesToScheme,
+                out ProxyEndpointTransport directiveTransport,
+                out string endpointValue);
 
             if (!TryParseEndpoint(
                     endpointValue,
@@ -197,26 +178,29 @@ public static class ProxyEndpointParser
                     out ParsedEndpoint? parsed,
                     out string failureReason))
             {
-                rejectedTokenCount++;
+                rejectedCount++;
                 warnings.Add(
                     $"프록시 항목 {token.Sequence}을(를) 사용하지 않았습니다: {failureReason}");
                 continue;
             }
 
-            parsedEndpointCount++;
-            if (!AppliesToTarget(
-                    appliesToScheme,
-                    targetScheme))
+            parsedCount++;
+            if (!AppliesToTarget(appliesToScheme, targetScheme))
             {
-                ignoredEndpointCount++;
+                ignoredCount++;
                 continue;
             }
 
             if (selected.Count >= MaximumEndpointCount)
             {
-                ignoredEndpointCount++;
-                warnings.Add(
-                    $"프록시 후보는 최대 {MaximumEndpointCount}개까지만 사용합니다.");
+                ignoredCount++;
+                if (!endpointLimitReported)
+                {
+                    warnings.Add(
+                        $"현재 대상에 적용되는 프록시 후보는 최대 {MaximumEndpointCount}개까지만 사용합니다.");
+                    endpointLimitReported = true;
+                }
+
                 continue;
             }
 
@@ -227,46 +211,41 @@ public static class ProxyEndpointParser
                 parsed.Port);
             if (!endpointKeys.Add(key))
             {
-                duplicateEndpointCount++;
+                duplicateCount++;
                 continue;
             }
 
             selected.Add(new ProxyEndpointCandidate(
-                Sequence: token.Sequence,
-                AppliesToScheme: appliesToScheme,
-                Transport: parsed.Transport,
-                Host: parsed.Host,
-                Port: parsed.Port,
-                HostFingerprint: CreateHostFingerprint(
-                    parsed.Host)));
+                token.Sequence,
+                appliesToScheme,
+                parsed.Transport,
+                parsed.Host,
+                parsed.Port,
+                CreateHostFingerprint(parsed.Host)));
         }
 
-        if (ignoredEndpointCount > 0)
-        {
-            warnings.Add(
-                $"현재 대상 스킴 또는 후보 제한에 맞지 않는 프록시 항목 {ignoredEndpointCount}개를 선택에서 제외했습니다.");
-        }
+        AddCountWarnings(
+            warnings,
+            ignoredCount,
+            duplicateCount,
+            duplicateDirectCount);
 
-        if (duplicateEndpointCount > 0)
-        {
-            warnings.Add(
-                $"중복 프록시 엔드포인트 {duplicateEndpointCount}개를 첫 번째 후보로 통합했습니다.");
-        }
-
-        ProxyEndpointDecision decision = selected.Count switch
-        {
-            > 0 when directFallback =>
-                ProxyEndpointDecision.ProxyWithDirectFallback,
-            > 0 => ProxyEndpointDecision.Proxy,
-            _ when directFallback => ProxyEndpointDecision.Direct,
-            _ => ProxyEndpointDecision.Unknown
-        };
+        ProxyEndpointDecision decision = ResolveDecision(
+            selected,
+            directSequences);
+        bool directFallback = decision
+            == ProxyEndpointDecision.ProxyWithDirectFallback;
 
         if (decision == ProxyEndpointDecision.Unknown)
         {
-            warnings.Add(parsedEndpointCount > 0
+            warnings.Add(parsedCount > 0
                 ? "현재 대상 URL에 적용되는 프록시 엔드포인트 또는 DIRECT 지시문이 없습니다."
                 : "사용 가능한 프록시 엔드포인트 또는 DIRECT 지시문을 찾지 못했습니다.");
+        }
+        else if (decision == ProxyEndpointDecision.DirectWithProxyAlternatives)
+        {
+            warnings.Add(
+                "DIRECT가 적용 가능한 프록시 후보보다 먼저 나타납니다. 순서를 보존했으며 프록시를 기본 경로로 추정하지 않습니다.");
         }
 
         return new ProxyEndpointParseResult(
@@ -275,11 +254,14 @@ public static class ProxyEndpointParser
             Decision: decision,
             TargetScheme: targetScheme,
             Endpoints: selected.ToArray(),
+            DirectSequences: directSequences.ToArray(),
             DirectFallback: directFallback,
-            ParsedEndpointCount: parsedEndpointCount,
-            IgnoredEndpointCount: ignoredEndpointCount,
-            DuplicateEndpointCount: duplicateEndpointCount,
-            RejectedTokenCount: rejectedTokenCount,
+            ParsedEndpointCount: parsedCount,
+            IgnoredEndpointCount: ignoredCount,
+            DuplicateEndpointCount: duplicateCount,
+            DuplicateDirectCount: duplicateDirectCount,
+            RejectedTokenCount: rejectedCount,
+            TruncatedTokenCount: tokenization.TruncatedTokenCount,
             Warnings: warnings.ToArray(),
             Errors: errors.ToArray());
     }
@@ -288,8 +270,7 @@ public static class ProxyEndpointParser
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         string normalized = host.Trim().TrimEnd('.').ToLowerInvariant();
-        byte[] digest = SHA256.HashData(
-            Encoding.UTF8.GetBytes(normalized));
+        byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
         return Convert.ToHexString(digest)
             [..FingerprintLength]
             .ToLowerInvariant();
@@ -297,21 +278,23 @@ public static class ProxyEndpointParser
 
     private static ProxyEndpointParseResult EmptyResult(
         bool inputPresent,
-        ProxyEndpointSourceKind sourceKind,
         string? targetScheme,
         IReadOnlyList<string> warnings,
         IReadOnlyList<string> errors) =>
         new(
             InputPresent: inputPresent,
-            SourceKind: sourceKind,
+            SourceKind: ProxyEndpointSourceKind.Unknown,
             Decision: ProxyEndpointDecision.Unknown,
             TargetScheme: targetScheme,
             Endpoints: Array.Empty<ProxyEndpointCandidate>(),
+            DirectSequences: Array.Empty<int>(),
             DirectFallback: false,
             ParsedEndpointCount: 0,
             IgnoredEndpointCount: 0,
             DuplicateEndpointCount: 0,
+            DuplicateDirectCount: 0,
             RejectedTokenCount: 0,
+            TruncatedTokenCount: 0,
             Warnings: warnings.ToArray(),
             Errors: errors.ToArray());
 
@@ -340,13 +323,11 @@ public static class ProxyEndpointParser
         return targetUri.Scheme.ToLowerInvariant();
     }
 
-    private static IReadOnlyList<RawProxyToken> Tokenize(
-        string input,
-        ICollection<string> warnings)
+    private static TokenizationResult Tokenize(string input)
     {
         List<RawProxyToken> tokens = [];
         int nextSequence = 1;
-        bool limitReported = false;
+        int truncatedCount = 0;
 
         foreach (string rawSegment in input.Split(';'))
         {
@@ -360,63 +341,50 @@ public static class ProxyEndpointParser
                 (char[]?)null,
                 StringSplitOptions.RemoveEmptyEntries
                     | StringSplitOptions.TrimEntries);
+
             for (int index = 0; index < words.Length; index++)
             {
+                string word = words[index];
+                string token = word;
+
+                if (IsDirectiveWord(word)
+                    && index + 1 < words.Length
+                    && !IsDirectiveWord(words[index + 1])
+                    && !words[index + 1].Equals(
+                        "DIRECT",
+                        StringComparison.OrdinalIgnoreCase)
+                    && !LooksLikeManualMapping(words[index + 1]))
+                {
+                    token = word + " " + words[++index];
+                }
+                else if (word.EndsWith("=", StringComparison.Ordinal)
+                         && index + 1 < words.Length)
+                {
+                    token = word + words[++index];
+                }
+
                 if (tokens.Count >= MaximumTokenCount)
                 {
-                    if (!limitReported)
-                    {
-                        warnings.Add(
-                            $"프록시 항목은 최대 {MaximumTokenCount}개까지만 해석합니다.");
-                        limitReported = true;
-                    }
-
+                    truncatedCount++;
                     continue;
                 }
 
-                string word = words[index];
-                string tokenValue = word;
-                if (IsProxyDirectiveWord(word))
-                {
-                    if (index + 1 < words.Length
-                        && !IsProxyDirectiveWord(words[index + 1])
-                        && !words[index + 1].Equals(
-                            "DIRECT",
-                            StringComparison.OrdinalIgnoreCase)
-                        && !LooksLikeManualMapping(words[index + 1]))
-                    {
-                        tokenValue = word + " " + words[++index];
-                    }
-                }
-                else if (word.EndsWith(
-                             '=',
-                             StringComparison.Ordinal)
-                         && index + 1 < words.Length)
-                {
-                    tokenValue = word + words[++index];
-                }
-
-                tokens.Add(new RawProxyToken(
-                    Sequence: nextSequence++,
-                    Value: tokenValue));
+                tokens.Add(new RawProxyToken(nextSequence++, token));
             }
         }
 
-        return tokens;
+        return new TokenizationResult(tokens.ToArray(), truncatedCount);
     }
 
     private static ProxyEndpointSourceKind InferSourceKind(
         IReadOnlyList<RawProxyToken> tokens)
     {
-        bool hasAutoDirective = tokens.Any(token =>
-            token.Value.Equals(
-                "DIRECT",
-                StringComparison.OrdinalIgnoreCase)
-            || StartsWithProxyDirective(token.Value));
-        bool hasManualMapping = tokens.Any(token =>
-            LooksLikeManualMapping(token.Value));
+        bool automatic = tokens.Any(token =>
+            token.Value.Equals("DIRECT", StringComparison.OrdinalIgnoreCase)
+            || StartsWithDirective(token.Value));
+        bool manual = tokens.Any(token => LooksLikeManualMapping(token.Value));
 
-        return (hasAutoDirective, hasManualMapping) switch
+        return (automatic, manual) switch
         {
             (true, true) => ProxyEndpointSourceKind.Mixed,
             (true, false) => ProxyEndpointSourceKind.AutoProxyResult,
@@ -425,65 +393,55 @@ public static class ProxyEndpointParser
         };
     }
 
-    private static bool TrySplitDirective(
-        string token,
-        out ProxyEndpointTransport transport,
-        out string endpoint)
-    {
-        transport = ProxyEndpointTransport.Unspecified;
-        endpoint = string.Empty;
-        int separator = token.IndexOfAny([' ', '\t']);
-        string directive = separator < 0
-            ? token
-            : token[..separator];
-        if (!TryMapDirectiveTransport(
-                directive,
-                out transport))
-        {
-            return false;
-        }
-
-        endpoint = separator < 0
-            ? string.Empty
-            : token[(separator + 1)..].Trim();
-        return true;
-    }
-
-    private static bool TrySplitManualMapping(
+    private static void ParseTokenShape(
         string token,
         out string? appliesToScheme,
-        out string endpoint)
+        out ProxyEndpointTransport directiveTransport,
+        out string endpointValue)
     {
         appliesToScheme = null;
-        endpoint = string.Empty;
-        int separator = token.IndexOf('=');
-        if (separator <= 0)
+        directiveTransport = ProxyEndpointTransport.Unspecified;
+        endpointValue = token;
+
+        int whitespace = token.IndexOfAny([' ', '\t']);
+        string first = whitespace < 0 ? token : token[..whitespace];
+        if (TryMapDirectiveTransport(
+                first,
+                out ProxyEndpointTransport transport))
         {
-            return false;
+            directiveTransport = transport;
+            endpointValue = whitespace < 0
+                ? string.Empty
+                : token[(whitespace + 1)..].Trim();
+            return;
         }
 
-        string key = token[..separator].Trim();
-        endpoint = token[(separator + 1)..].Trim();
+        int equals = token.IndexOf('=');
+        if (equals <= 0)
+        {
+            return;
+        }
+
+        string key = token[..equals].Trim();
         if (key.Equals("all", StringComparison.OrdinalIgnoreCase)
             || key.Equals("*", StringComparison.Ordinal))
         {
             appliesToScheme = "all";
-            return true;
+            endpointValue = token[(equals + 1)..].Trim();
+            return;
         }
 
-        if (!Uri.CheckSchemeName(key))
+        if (Uri.CheckSchemeName(key))
         {
-            return false;
+            appliesToScheme = key.ToLowerInvariant();
+            endpointValue = token[(equals + 1)..].Trim();
         }
-
-        appliesToScheme = key.ToLowerInvariant();
-        return true;
     }
 
     private static bool TryParseEndpoint(
         string value,
         ProxyEndpointTransport directiveTransport,
-        out ParsedEndpoint? endpoint,
+        [NotNullWhen(true)] out ParsedEndpoint? endpoint,
         out string failureReason)
     {
         endpoint = null;
@@ -510,15 +468,13 @@ public static class ProxyEndpointParser
         {
             if (!TryParseEndpointUri(
                     candidate,
-                    out ProxyEndpointTransport uriTransport,
+                    out transport,
                     out host,
                     out port,
                     out failureReason))
             {
                 return false;
             }
-
-            transport = uriTransport;
         }
         else if (!TryParseAuthority(
                      candidate,
@@ -529,18 +485,13 @@ public static class ProxyEndpointParser
             return false;
         }
 
-        if (!TryNormalizeHost(
-                host,
-                out string normalizedHost))
+        if (!TryNormalizeHost(host, out string normalizedHost))
         {
             failureReason = "호스트 형식이 유효하지 않습니다.";
             return false;
         }
 
-        endpoint = new ParsedEndpoint(
-            Transport: transport,
-            Host: normalizedHost,
-            Port: port);
+        endpoint = new ParsedEndpoint(transport, normalizedHost, port);
         return true;
     }
 
@@ -556,10 +507,7 @@ public static class ProxyEndpointParser
         port = null;
         failureReason = string.Empty;
 
-        if (!Uri.TryCreate(
-                value,
-                UriKind.Absolute,
-                out Uri? uri)
+        if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)
             || !TryMapUriTransport(uri.Scheme, out transport))
         {
             failureReason = "지원하지 않는 프록시 URI 스킴입니다.";
@@ -575,18 +523,15 @@ public static class ProxyEndpointParser
         if (!string.IsNullOrEmpty(uri.Query)
             || !string.IsNullOrEmpty(uri.Fragment)
             || (!string.IsNullOrEmpty(uri.AbsolutePath)
-                && !uri.AbsolutePath.Equals(
-                    "/",
-                    StringComparison.Ordinal)))
+                && !uri.AbsolutePath.Equals("/", StringComparison.Ordinal)))
         {
-            failureReason = "프록시 URI에는 경로, query 또는 fragment를 사용할 수 없습니다.";
+            failureReason =
+                "프록시 URI에는 경로, query 또는 fragment를 사용할 수 없습니다.";
             return false;
         }
 
         host = uri.IdnHost;
-        port = uri.Port > 0
-            ? uri.Port
-            : GetUriDefaultPort(transport);
+        port = uri.Port > 0 ? uri.Port : GetUriDefaultPort(transport);
         return true;
     }
 
@@ -602,67 +547,67 @@ public static class ProxyEndpointParser
 
         if (value.Contains('@'))
         {
-            failureReason = "사용자 정보가 포함된 프록시 엔드포인트는 허용하지 않습니다.";
+            failureReason =
+                "사용자 정보가 포함된 프록시 엔드포인트는 허용하지 않습니다.";
             return false;
         }
 
-        if (value.StartsWith('[', StringComparison.Ordinal))
+        if (value.StartsWith("[", StringComparison.Ordinal))
         {
-            int closingBracket = value.IndexOf(']');
-            if (closingBracket <= 1)
+            int closing = value.IndexOf(']');
+            if (closing <= 1)
             {
                 failureReason = "IPv6 대괄호 형식이 올바르지 않습니다.";
                 return false;
             }
 
-            host = value[1..closingBracket];
-            string suffix = value[(closingBracket + 1)..];
+            host = value[1..closing];
+            string suffix = value[(closing + 1)..];
             if (suffix.Length == 0)
             {
                 return true;
             }
 
-            if (!suffix.StartsWith(':', StringComparison.Ordinal)
-                || !TryParsePort(suffix[1..], out int parsedPort))
+            if (!suffix.StartsWith(":", StringComparison.Ordinal)
+                || !TryParsePort(suffix[1..], out int bracketPort))
             {
                 failureReason = "IPv6 프록시 포트가 유효하지 않습니다.";
                 return false;
             }
 
-            port = parsedPort;
+            port = bracketPort;
             return true;
         }
 
-        if (IPAddress.TryParse(value, out IPAddress? literalAddress))
+        if (IPAddress.TryParse(value, out IPAddress? address))
         {
-            host = literalAddress.ToString();
+            host = address.ToString();
             return true;
         }
 
         int firstColon = value.IndexOf(':');
         int lastColon = value.LastIndexOf(':');
-        if (firstColon >= 0)
+        if (firstColon < 0)
         {
-            if (firstColon != lastColon)
-            {
-                failureReason = "포트가 있는 IPv6 주소는 대괄호로 감싸야 합니다.";
-                return false;
-            }
-
-            host = value[..firstColon];
-            if (!TryParsePort(
-                    value[(firstColon + 1)..],
-                    out int parsedPort))
-            {
-                failureReason = "프록시 포트는 1~65535 범위여야 합니다.";
-                return false;
-            }
-
-            port = parsedPort;
+            host = value;
             return true;
         }
 
-        host = value;
+        if (firstColon != lastColon)
+        {
+            failureReason =
+                "포트가 있는 IPv6 주소는 대괄호로 감싸야 합니다.";
+            return false;
+        }
+
+        host = value[..firstColon];
+        if (!TryParsePort(value[(firstColon + 1)..], out int parsedPort))
+        {
+            failureReason = "프록시 포트는 1~65535 범위여야 합니다.";
+            return false;
+        }
+
+        port = parsedPort;
         return true;
     }
 
@@ -683,20 +628,16 @@ public static class ProxyEndpointParser
             return false;
         }
 
-        if (IPAddress.TryParse(
-                candidate,
-                out IPAddress? literalAddress))
+        if (IPAddress.TryParse(candidate, out IPAddress? address))
         {
-            normalizedHost = literalAddress.ToString();
+            normalizedHost = address.ToString();
             return true;
         }
 
         string ascii;
         try
         {
-            ascii = new IdnMapping()
-                .GetAscii(candidate)
-                .ToLowerInvariant();
+            ascii = new IdnMapping().GetAscii(candidate).ToLowerInvariant();
         }
         catch (ArgumentException)
         {
@@ -708,12 +649,11 @@ public static class ProxyEndpointParser
             return false;
         }
 
-        string[] labels = ascii.Split('.');
-        foreach (string label in labels)
+        foreach (string label in ascii.Split('.'))
         {
             if (label.Length is < 1 or > 63
-                || label.StartsWith('-', StringComparison.Ordinal)
-                || label.EndsWith('-', StringComparison.Ordinal)
+                || label.StartsWith("-", StringComparison.Ordinal)
+                || label.EndsWith("-", StringComparison.Ordinal)
                 || label.Any(character =>
                     !char.IsAsciiLetterOrDigit(character)
                     && character is not '-' and not '_'))
@@ -726,9 +666,7 @@ public static class ProxyEndpointParser
         return true;
     }
 
-    private static bool TryParsePort(
-        string value,
-        out int port) =>
+    private static bool TryParsePort(string value, out int port) =>
         int.TryParse(
             value,
             NumberStyles.None,
@@ -736,14 +674,58 @@ public static class ProxyEndpointParser
             out port)
         && port is >= 1 and <= 65535;
 
+    private static void AddCountWarnings(
+        ICollection<string> warnings,
+        int ignored,
+        int duplicates,
+        int duplicateDirect)
+    {
+        if (ignored > 0)
+        {
+            warnings.Add(
+                $"현재 대상 스킴 또는 후보 제한에 맞지 않는 프록시 항목 {ignored}개를 선택에서 제외했습니다.");
+        }
+
+        if (duplicates > 0)
+        {
+            warnings.Add(
+                $"중복 프록시 엔드포인트 {duplicates}개를 첫 번째 후보로 통합했습니다.");
+        }
+
+        if (duplicateDirect > 0)
+        {
+            warnings.Add(
+                $"중복 DIRECT 지시문 {duplicateDirect}개를 첫 번째 지시문으로 통합했습니다.");
+        }
+    }
+
+    private static ProxyEndpointDecision ResolveDecision(
+        IReadOnlyList<ProxyEndpointCandidate> endpoints,
+        IReadOnlyList<int> directSequences)
+    {
+        if (endpoints.Count == 0)
+        {
+            return directSequences.Count > 0
+                ? ProxyEndpointDecision.Direct
+                : ProxyEndpointDecision.Unknown;
+        }
+
+        if (directSequences.Count == 0)
+        {
+            return ProxyEndpointDecision.Proxy;
+        }
+
+        return endpoints.Min(item => item.Sequence) < directSequences.Min()
+            ? ProxyEndpointDecision.ProxyWithDirectFallback
+            : ProxyEndpointDecision.DirectWithProxyAlternatives;
+    }
+
     private static bool AppliesToTarget(
         string? appliesToScheme,
         string? targetScheme) =>
         targetScheme is null
         || string.IsNullOrWhiteSpace(appliesToScheme)
-        || appliesToScheme.Equals(
-            "all",
-            StringComparison.OrdinalIgnoreCase)
+        || appliesToScheme.Equals("all", StringComparison.OrdinalIgnoreCase)
         || appliesToScheme.Equals(
             targetScheme,
             StringComparison.OrdinalIgnoreCase);
@@ -758,33 +740,29 @@ public static class ProxyEndpointParser
             appliesToScheme ?? string.Empty,
             transport.ToString(),
             host,
-            port?.ToString(CultureInfo.InvariantCulture)
-                ?? string.Empty);
+            port?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
 
     private static bool LooksLikeManualMapping(string value)
     {
-        int separator = value.IndexOf('=');
-        if (separator <= 0)
+        int equals = value.IndexOf('=');
+        if (equals <= 0)
         {
             return false;
         }
 
-        string key = value[..separator].Trim();
+        string key = value[..equals].Trim();
         return key.Equals("all", StringComparison.OrdinalIgnoreCase)
             || key.Equals("*", StringComparison.Ordinal)
             || Uri.CheckSchemeName(key);
     }
 
-    private static bool StartsWithProxyDirective(string value)
+    private static bool StartsWithDirective(string value)
     {
         int separator = value.IndexOfAny([' ', '\t']);
-        string firstWord = separator < 0
-            ? value
-            : value[..separator];
-        return IsProxyDirectiveWord(firstWord);
+        return IsDirectiveWord(separator < 0 ? value : value[..separator]);
     }
 
-    private static bool IsProxyDirectiveWord(string value) =>
+    private static bool IsDirectiveWord(string value) =>
         TryMapDirectiveTransport(value, out _);
 
     private static bool TryMapDirectiveTransport(
@@ -831,9 +809,11 @@ public static class ProxyEndpointParser
             _ => null
         };
 
-    private sealed record RawProxyToken(
-        int Sequence,
-        string Value);
+    private sealed record RawProxyToken(int Sequence, string Value);
+
+    private sealed record TokenizationResult(
+        IReadOnlyList<RawProxyToken> Tokens,
+        int TruncatedTokenCount);
 
     private sealed record ParsedEndpoint(
         ProxyEndpointTransport Transport,
