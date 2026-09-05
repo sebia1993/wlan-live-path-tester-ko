@@ -151,7 +151,7 @@ public static class InternalProxyRouteComparisonRunTextRenderer
         IReadOnlyList<NetworkAdapterCategory> values)
     {
         string[] safe = values
-            .Select(SafeCategory)
+            .Select(value => SafeCategory(value))
             .Where(value => value != "확인 불가")
             .Distinct(StringComparer.Ordinal)
             .OrderBy(value => value, StringComparer.Ordinal)
