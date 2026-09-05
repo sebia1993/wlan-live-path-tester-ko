@@ -331,7 +331,7 @@ internal static class InternalProxyExactRouteComparisonV3Tests
         ProxyEndpointRouteEvidenceItem failed = CreateEndpoint(
             2,
             exactInterfaceId: null,
-            NetworkAdapterCategory.Unknown) with
+            NetworkAdapterCategory.Other) with
         {
             RouteStatus = DestinationRouteEvidenceStatus.RouteNotFound,
             SelectedInterfaceFingerprint = null,
