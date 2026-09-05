@@ -26,7 +26,7 @@ internal static class Program
         try
         {
             tests.GetAwaiter().GetResult();
-            Console.WriteLine("PASS WPF operation smoke: 9 groups; no DNS, HTTP or WLAN reads");
+            Console.WriteLine("PASS WPF operation smoke: 10 groups; no DNS, HTTP or WLAN reads");
             return 0;
         }
         catch (Exception exception)
@@ -40,6 +40,7 @@ internal static class Program
     {
         await Task.Yield();
         VerifyOperationPairMatrix();
+        VerifySharedRouteOwnership();
         VerifyLateTabsAndRemovedTabs();
         await VerifyBindingRestorationAsync();
         VerifyCancellationAndStaleLease();
@@ -82,6 +83,26 @@ internal static class Program
         Console.WriteLine("PASS operation kind pair matrix (9 pairs)");
     }
 
+    private static void VerifySharedRouteOwnership()
+    {
+        (TabControl host, _, _) = Tabs();
+        ApplicationOperationCoordinator shared = new();
+        ApplicationOperationUiSession session = new(Dispatcher.CurrentDispatcher, shared);
+        using ApplicationOperationLease route = shared.TryBegin(
+            ApplicationOperationKind.RouteComparison).Lease!;
+        Ensure(session.TryBegin(ApplicationOperationKind.DownloadMeasurement, host, null,
+            out ApplicationOperationStartStatus blocked) is null
+            && blocked == ApplicationOperationStartStatus.Busy && !session.HasActiveUiLease,
+            "Existing route actions must block the UI adapter through the same coordinator.");
+        route.Dispose();
+        using ApplicationOperationUiLease observation = Begin(
+            session, host, ApplicationOperationKind.BrowserObservation);
+        Ensure(shared.TryBegin(ApplicationOperationKind.WindowsProxyImport).Status
+            == ApplicationOperationStartStatus.Busy,
+            "UI actions must block existing Windows proxy import through the same coordinator.");
+        Console.WriteLine("PASS shared route/import and UI coordinator ownership");
+    }
+
     private static void VerifyLateTabsAndRemovedTabs()
     {
         (TabControl host, _, TabItem peer) = Tabs();
@@ -109,10 +130,14 @@ internal static class Program
         ApplicationOperationUiSession session = new(Dispatcher.CurrentDispatcher);
         ApplicationOperationUiLease active = Begin(session, host);
         source.Enabled = false;
+        source.Enabled = true;
+        await Dispatcher.Yield(DispatcherPriority.Background);
+        Ensure(!peer.IsEnabled, "Binding changes must not unlock a peer during an operation.");
+        source.Enabled = false;
         active.Dispose();
         await Dispatcher.Yield(DispatcherPriority.Background);
         Ensure(BindingOperations.IsDataBound(peer, UIElement.IsEnabledProperty)
-            && !peer.IsEnabled, "Cleanup must preserve the live binding, not an old Boolean.");
+            && !peer.IsEnabled, "Cleanup must restore the live binding, not an old Boolean.");
         source.Enabled = true;
         await Dispatcher.Yield(DispatcherPriority.Background);
         Ensure(peer.IsEnabled, "A restored binding must continue to update.");
@@ -204,8 +229,8 @@ internal static class Program
 
     private static async Task VerifyRealMeasurementEntryPointAsync()
     {
-        // Construct but never show the production window: Loaded hooks do not
-        // run, so no WLAN, adapter, proxy or network reader is started.
+        // Construct but never show the window. No Loaded hook, WLAN read or
+        // network reader is run; only the injected synthetic delegate executes.
         MainWindow window = new();
         TabControl host = PrepareWindow(window);
         TaskCompletionSource done = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -221,6 +246,8 @@ internal static class Program
             Invoke(window, "OnResolveProxyRouteClick", window, new RoutedEventArgs());
             Ensure(Session(window).Snapshot.Kind == ApplicationOperationKind.DownloadMeasurement,
                 "The real proxy click must not start WinHTTP while measurement owns the lease.");
+            Ensure(window.CurrentApplicationOperation.OperationId == Session(window).Snapshot.OperationId,
+                "The production UI session must expose the same global operation ID.");
             done.TrySetResult();
             await first.WaitAsync(TimeSpan.FromSeconds(5));
             Ensure(!Session(window).Snapshot.IsBusy && host.Items.OfType<TabItem>().All(t => t.IsEnabled),
@@ -235,9 +262,10 @@ internal static class Program
         MainWindow window = new();
         _ = PrepareWindow(window);
         TaskCompletionSource done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource closedSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
         bool closed = false;
         CancellationToken observed = default;
-        window.Closed += (_, _) => closed = true;
+        window.Closed += (_, _) => { closed = true; closedSignal.TrySetResult(); };
         Task operation = StartSyntheticMeasurement(window, token =>
         {
             observed = token;
@@ -250,7 +278,9 @@ internal static class Program
                 "Close must cancel but retain the window until the action actually finishes.");
             done.TrySetResult();
             await operation.WaitAsync(TimeSpan.FromSeconds(5));
-            await Dispatcher.Yield(DispatcherPriority.Background);
+            // Wait for the actual event rather than assuming a single yield
+            // also drains an independently scheduled shutdown continuation.
+            await closedSignal.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Ensure(closed && !Session(window).Snapshot.IsBusy,
                 "The production close handler must close only after UI cleanup and lease release.");
         }
