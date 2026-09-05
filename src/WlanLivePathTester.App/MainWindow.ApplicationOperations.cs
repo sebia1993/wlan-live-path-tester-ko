@@ -13,6 +13,7 @@ public partial class MainWindow
     private readonly ApplicationOperationCoordinator
         _applicationOperations = new();
     private ApplicationOperationLease? _routeComparisonOperationLeaseV3;
+    private ApplicationOperationLease? _routeReportOperationLeaseV2;
     private ApplicationOperationUiSession? _applicationOperationUi;
     private bool _applicationOperationClosePending;
     private bool _applicationOperationWindowClosed;

@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Core.Reporting;
 using WlanLivePathTester.Core.Routing;
 
@@ -33,7 +34,10 @@ public partial class MainWindow
     private bool _routeReportWindowClosed;
     private bool _routeReportNeedsReview;
 
-    private bool RouteReportSaveBusy => _routeReportSaveSession.IsBusy || !_routeReportUiSettled.IsCompleted;
+    private bool RouteReportSaveBusy =>
+        _routeReportSaveSession.IsBusy
+        || !_routeReportUiSettled.IsCompleted
+        || _routeReportOperationLeaseV2 is not null;
 
     internal void EnsureRouteComparisonReportTabV2()
     {
@@ -121,11 +125,34 @@ public partial class MainWindow
             return;
         }
 
+        int operationCancellationRequested = 0;
+        Action requestOperationCancellation = () =>
+        {
+            Interlocked.Exchange(ref operationCancellationRequested, 1);
+            _routeReportSaveSession.RequestCancellation();
+        };
+        if (!TryBeginApplicationOperation(
+                ApplicationOperationKind.RouteComparisonReportSave,
+                requestOperationCancellation,
+                out ApplicationOperationLease? operationLease,
+                out string rejectionMessage)
+            || operationLease is null)
+        {
+            SetRouteComparisonReportResultV2(rejectionMessage, Brushes.DarkOrange);
+            return;
+        }
+
+        _routeReportOperationLeaseV2 = operationLease;
         _routeReportNeedsReview = false;
         TaskCompletionSource<bool> uiSettled = new(TaskCreationOptions.RunContinuationsAsynchronously);
         _routeReportUiSettled = uiSettled.Task;
         try
         {
+            if (Volatile.Read(ref operationCancellationRequested) != 0)
+            {
+                throw new OperationCanceledException();
+            }
+
             string version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "development";
             string directory = GetRouteComparisonReportDirectoryV2();
             if (!_routeReportSaveSession.TryStart(token =>
@@ -140,6 +167,12 @@ public partial class MainWindow
                 SetRouteComparisonReportResultV2("다른 저장 작업이 정리 중이거나 창이 종료 중입니다.", Brushes.DarkOrange);
                 return;
             }
+
+            if (Volatile.Read(ref operationCancellationRequested) != 0)
+            {
+                _routeReportSaveSession.RequestCancellation();
+            }
+
             SetRouteReportSaveBusy(true);
             SetRouteComparisonReportResultV2("로컬 보고서를 생성하고 있습니다. 저장 취소는 단계 사이에서 반영됩니다.", Brushes.DarkSlateGray);
             RouteReportSaveOutput saved = await completion;
@@ -188,15 +221,25 @@ public partial class MainWindow
             }
             if (!_routeReportWindowClosed) SetRouteReportSaveBusy(false);
             uiSettled.TrySetResult(true);
+            if (ReferenceEquals(_routeReportOperationLeaseV2, operationLease))
+                _routeReportOperationLeaseV2 = null;
+            operationLease.Dispose();
         }
     }
 
     private void OnCancelRouteComparisonReportV2(object sender, RoutedEventArgs e)
     {
         if (!RouteReportSaveBusy || _routeReportWindowClosed) return;
-        _routeReportSaveSession.RequestCancellation();
+        ApplicationOperationCancellationStatus status = RequestRouteReportCancellationV2();
         if (_routeComparisonReportCancelV2 is not null) _routeComparisonReportCancelV2.IsEnabled = false;
-        SetRouteComparisonReportResultV2("취소 요청됨 · 현재 단계와 파일 정리가 끝나는 것을 기다립니다.", Brushes.DarkOrange);
+        string failure = FormatApplicationCancellationFailure(status);
+        SetRouteComparisonReportResultV2(
+            string.IsNullOrWhiteSpace(failure)
+                ? "취소 요청됨 · 현재 단계와 파일 정리가 끝나는 것을 기다립니다."
+                : failure,
+            status == ApplicationOperationCancellationStatus.CallbackFailed
+                ? Brushes.DarkRed
+                : Brushes.DarkOrange);
     }
 
     private void OnRouteReportWindowClosing(object? sender, CancelEventArgs e)
@@ -205,9 +248,24 @@ public partial class MainWindow
         e.Cancel = true;
         if (_routeReportCloseRequested) return;
         _routeReportCloseRequested = true;
-        _routeReportSaveSession.RequestCancellation();
+        RequestRouteReportCancellationV2();
         SetRouteComparisonReportResultV2("창 닫기를 보류하고 저장 취소·파일 정리를 진행합니다.", Brushes.DarkOrange);
         _ = FinishDeferredRouteReportCloseAsync();
+    }
+
+    private ApplicationOperationCancellationStatus RequestRouteReportCancellationV2()
+    {
+        ApplicationOperationCancellationStatus status =
+            _routeReportOperationLeaseV2?.RequestCancellation()
+            ?? ApplicationOperationCancellationStatus.NotActive;
+        if (status is ApplicationOperationCancellationStatus.NotActive
+            or ApplicationOperationCancellationStatus.NotSupported
+            or ApplicationOperationCancellationStatus.CallbackFailed)
+        {
+            _routeReportSaveSession.RequestCancellation();
+        }
+
+        return status;
     }
 
     private async Task FinishDeferredRouteReportCloseAsync()
