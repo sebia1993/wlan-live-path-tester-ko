@@ -27,6 +27,7 @@ $requiredEntries = @(
     'docs/INTERNAL_PROXY_ROUTE_COMPARISON_COORDINATOR_V2.md',
     'docs/INTERNAL_PROXY_ROUTE_COMPARISON_RUN_FINDINGS_V2.md',
     'docs/INTERNAL_PROXY_ROUTE_COMPARISON_UI_V3.md',
+    'docs/WINDOWS_ROUTE_PROXY_IMPORT.md',
     'docs/ROUTE_COMPARISON_REPORT_EXPORT.md'
 )
 $duplicates = @($requiredEntries | Group-Object | Where-Object { $_.Count -gt 1 })

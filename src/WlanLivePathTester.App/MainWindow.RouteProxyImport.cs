@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,6 +20,7 @@ public partial class MainWindow
     private CheckBox? _allowAutomaticRouteProxy;
     private TextBlock? _importedRouteProxySummary;
     private TaskCompletionSource? _routeProxyOperationCompletion;
+    private INotifyCollectionChanged? _routeProxyPeerCollection;
     private bool _routeProxyImportAttached;
     private bool _routeProxyWindowClosed;
     private bool _routeProxyClosePending;
@@ -108,8 +110,9 @@ public partial class MainWindow
             SetRouteProxyImportSummary("설정을 읽고 있습니다. 취소를 요청해도 네이티브 조회가 반환될 때까지 추가 실행은 차단됩니다.");
             WindowsRouteProxyImportResult result = await _windowsRouteProxyImporter.ImportAsync(
                 target, allowAutomatic, timeoutMilliseconds: 5000, cancellationToken: token);
+            token.ThrowIfCancellationRequested();
             if (_routeProxyWindowClosed) return;
-            if (!token.IsCancellationRequested && result.HasSelection)
+            if (result.HasSelection)
             {
                 _importedRouteProxy = result;
             }
@@ -170,6 +173,10 @@ public partial class MainWindow
         try
         {
             SetRouteComparisonBusyV3(isBusy: true);
+            TabControl? tabs = FindRouteComparisonDescendantV3<TabControl>(this);
+            _routeProxyPeerCollection = tabs?.Items as INotifyCollectionChanged;
+            if (_routeProxyPeerCollection is not null)
+                _routeProxyPeerCollection.CollectionChanged += OnRouteProxyPeerTabsChanged;
             UpdateRouteProxyImportControls();
             await operation(active.Token);
         }
@@ -186,17 +193,45 @@ public partial class MainWindow
         }
         finally
         {
-            if (ReferenceEquals(_routeComparisonCancellationV3, active))
-                _routeComparisonCancellationV3 = null;
-            active.Dispose();
-            if (!_routeProxyWindowClosed)
+            try
             {
-                SetRouteComparisonBusyV3(isBusy: false);
-                UpdateRouteProxyImportControls();
+                UnhookRouteProxyPeerTabs();
+                if (ReferenceEquals(_routeComparisonCancellationV3, active))
+                    _routeComparisonCancellationV3 = null;
+                active.Dispose();
+                if (!_routeProxyWindowClosed)
+                {
+                    SetRouteComparisonBusyV3(isBusy: false);
+                    UpdateRouteProxyImportControls();
+                }
             }
-            _routeProxyOperationCompletion = null;
-            completion.TrySetResult();
+            finally
+            {
+                _routeProxyOperationCompletion = null;
+                completion.TrySetResult();
+            }
         }
+    }
+
+    private void OnRouteProxyPeerTabsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_routeProxyOperationCompletion is null || _routeComparisonPeerTabStatesV3 is null) return;
+        TabControl? tabs = FindRouteComparisonDescendantV3<TabControl>(this);
+        if (tabs is null) return;
+        foreach (TabItem tab in tabs.Items.OfType<TabItem>())
+        {
+            if (ReferenceEquals(tab, _routeComparisonTabV3) || _routeComparisonPeerTabStatesV3.ContainsKey(tab))
+                continue;
+            _routeComparisonPeerTabStatesV3[tab] = tab.IsEnabled;
+            tab.IsEnabled = false;
+        }
+    }
+
+    private void UnhookRouteProxyPeerTabs()
+    {
+        if (_routeProxyPeerCollection is not null)
+            _routeProxyPeerCollection.CollectionChanged -= OnRouteProxyPeerTabsChanged;
+        _routeProxyPeerCollection = null;
     }
 
     private Uri? ReadRouteProxyTarget() => Uri.TryCreate(
@@ -244,6 +279,7 @@ public partial class MainWindow
             _ = Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
             {
                 _routeProxyClosePending = false;
+                UpdateRouteProxyImportControls();
                 if (!_routeProxyWindowClosed) Close();
             }));
         }
@@ -253,6 +289,7 @@ public partial class MainWindow
     {
         _routeProxyWindowClosed = true;
         _importedRouteProxy = null;
+        UnhookRouteProxyPeerTabs();
         if (_routeComparisonExternalTargetV3 is not null)
             _routeComparisonExternalTargetV3.TextChanged -= OnRouteProxyTargetChanged;
         if (_routeComparisonStartV3 is not null)
