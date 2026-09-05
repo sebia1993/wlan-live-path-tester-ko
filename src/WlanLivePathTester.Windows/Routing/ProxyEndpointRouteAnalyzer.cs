@@ -88,7 +88,7 @@ public sealed class ProxyEndpointRouteAnalyzer
         bool directIsPrimary = firstDirectSequence.HasValue
             && (parsed.Endpoints.Count == 0
                 || firstDirectSequence.Value
-                    < parsed.Endpoints.Min(item => item.Sequence));
+                    < parsed.Endpoints.Min(endpoint => endpoint.Sequence));
 
         if (parsed.Decision is ProxyEndpointDecision.Direct
             or ProxyEndpointDecision.DirectWithProxyAlternatives)
@@ -167,7 +167,7 @@ public sealed class ProxyEndpointRouteAnalyzer
                 canceled = true;
                 break;
             }
-            catch (Exception exception)
+            catch (Exception)
             {
                 routeEvidence = new DestinationRouteEvidence(
                     CapturedAt: DateTimeOffset.UtcNow,
@@ -181,7 +181,7 @@ public sealed class ProxyEndpointRouteAnalyzer
                         Array.Empty<RouteAddressEvidence>(),
                     Warnings: Array.Empty<string>(),
                     Message:
-                        $"로컬 라우팅 판정 중 오류가 발생했습니다: {exception.Message}");
+                        "로컬 라우팅 판정 중 예외가 발생했습니다. 예외 원문은 결과에 포함하지 않았습니다.");
             }
 
             DestinationRouteEvidence correlated =
@@ -210,14 +210,15 @@ public sealed class ProxyEndpointRouteAnalyzer
             }
         }
 
-        int successfulEndpointCount = evidenceItems.Count(item =>
-            item.IsRouteSuccess);
+        int successfulEndpointCount = evidenceItems.Count(endpoint =>
+            endpoint.IsRouteSuccess);
         int distinctInterfaceCount = evidenceItems
-            .Where(item => item.IsRouteSuccess)
-            .Select(item => item.SelectedInterfaceFingerprint)
+            .Where(endpoint => endpoint.IsRouteSuccess)
+            .Select(endpoint => endpoint.SelectedInterfaceFingerprint)
             .Where(value =>
                 !string.IsNullOrWhiteSpace(value)
-                && !value.Equals(
+                && !string.Equals(
+                    value,
                     "없음",
                     StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
