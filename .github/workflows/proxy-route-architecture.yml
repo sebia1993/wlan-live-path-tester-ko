@@ -1,0 +1,112 @@
+name: Proxy Route Architecture CI
+
+on:
+  pull_request:
+    paths:
+      - "src/WlanLivePathTester.Core/Proxy/**"
+      - "src/WlanLivePathTester.Core/Routing/**"
+      - "src/WlanLivePathTester.Windows/Routing/**"
+      - "tests/WlanLivePathTester.SelfTest/**"
+      - "tests/WlanLivePathTester.WindowsSmoke/**"
+      - "scripts/test-proxy-route-architecture.ps1"
+      - "docs/PROXY_*.md"
+      - "docs/INTERNAL_PROXY_ROUTE_*.md"
+      - ".github/workflows/proxy-route-architecture.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/WlanLivePathTester.Core/Proxy/**"
+      - "src/WlanLivePathTester.Core/Routing/**"
+      - "src/WlanLivePathTester.Windows/Routing/**"
+      - "tests/WlanLivePathTester.SelfTest/**"
+      - "tests/WlanLivePathTester.WindowsSmoke/**"
+      - "scripts/test-proxy-route-architecture.ps1"
+      - "docs/PROXY_*.md"
+      - "docs/INTERNAL_PROXY_ROUTE_*.md"
+      - ".github/workflows/proxy-route-architecture.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proxy-route-architecture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate-layering-build-and-smoke
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate proxy route architecture contract
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass
+          -File .\scripts\test-proxy-route-architecture.ps1
+
+      - name: Restore solution
+        shell: pwsh
+        run: dotnet restore .\WlanLivePathTester.sln
+
+      - name: Build solution with warnings as errors
+        shell: pwsh
+        run: dotnet build .\WlanLivePathTester.sln -c Release --no-restore
+
+      - name: Run Core SelfTest
+        shell: pwsh
+        run: >-
+          dotnet run
+          --project .\tests\WlanLivePathTester.SelfTest\WlanLivePathTester.SelfTest.csproj
+          -c Release
+          --no-restore
+
+      - name: Run Windows Smoke
+        shell: pwsh
+        run: >-
+          dotnet run
+          --project .\tests\WlanLivePathTester.WindowsSmoke\WlanLivePathTester.WindowsSmoke.csproj
+          -c Release
+          --no-restore
+
+      - name: Write failure inventory
+        if: failure()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $paths = @(
+            'src/WlanLivePathTester.Core/Proxy',
+            'src/WlanLivePathTester.Core/Routing',
+            'src/WlanLivePathTester.Windows/Routing'
+          )
+          $lines = @()
+          foreach ($path in $paths) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              continue
+            }
+            $lines += Get-ChildItem -LiteralPath $path -Recurse -File |
+              ForEach-Object {
+                $_.FullName.Substring($env:GITHUB_WORKSPACE.Length + 1).Replace('\', '/')
+              }
+          }
+          $lines | Sort-Object -Unique |
+            Set-Content -LiteralPath proxy-route-source-inventory.txt -Encoding utf8
+
+      - name: Upload failure inventory
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: proxy-route-source-inventory
+          path: proxy-route-source-inventory.txt
+          if-no-files-found: ignore
+          retention-days: 3
