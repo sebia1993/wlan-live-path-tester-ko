@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using WlanLivePathTester.Core.Measurements;
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Core.Wlan;
 using WlanLivePathTester.Windows.Measurements;
 using WlanLivePathTester.Windows.Proxy;
@@ -18,6 +19,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        InitializeApplicationOperations();
     }
 
     private void OnReadWlanStatusClick(object sender, RoutedEventArgs e)
@@ -82,6 +84,15 @@ public partial class MainWindow : Window
 
     private async void OnResolveProxyRouteClick(object sender, RoutedEventArgs e)
     {
+        using ApplicationOperationUiLease? lease = TryBeginUiApplicationOperation(
+            ApplicationOperationKind.ProxyRouteResolution);
+        if (lease is null)
+        {
+            ProxyRouteResultText.Foreground = Brushes.DarkOrange;
+            ProxyRouteResultText.Text = MeasurementStatusText.Text;
+            return;
+        }
+
         string url = ProxyTargetUrlTextBox.Text.Trim();
         NetworkPathKind expectedPath = ProxyExpectedPathComboBox.SelectedIndex == 1
             ? NetworkPathKind.Internal
@@ -95,6 +106,8 @@ public partial class MainWindow : Window
 
         try
         {
+            // The existing native resolver is synchronous and is not aborted
+            // by disposing a UI lease. Closing waits for its actual return.
             ProxyRouteResolution result = await Task.Run(
                 () => ProxyRouteResolver.Resolve(url, expectedPath));
 
@@ -260,16 +273,13 @@ public partial class MainWindow : Window
         Func<CancellationToken, Task> operation,
         string runningMessage)
     {
-        if (_measurementRunning)
-        {
-            MeasurementStatusText.Foreground = Brushes.DarkOrange;
-            MeasurementStatusText.Text = "다른 측정이 진행 중입니다. 완료하거나 취소한 뒤 다시 실행하십시오.";
-            return;
-        }
-
         using CancellationTokenSource cancellation = new();
+        using ApplicationOperationUiLease? lease = TryBeginUiApplicationOperation(
+            ApplicationOperationKind.DownloadMeasurement, cancellation.Cancel);
+        if (lease is null) return;
+
         _measurementRunning = true;
-        _cancelMeasurement = cancellation.Cancel;
+        _cancelMeasurement = () => lease.RequestCancellation();
         SetMeasurementBusy(true);
         MeasurementStatusText.Foreground = Brushes.DarkSlateGray;
         MeasurementStatusText.Text = runningMessage;
@@ -283,6 +293,11 @@ public partial class MainWindow : Window
             MeasurementStatusText.Text = cancellation.IsCancellationRequested
                 ? "측정 취소 처리가 완료되었습니다."
                 : "측정이 완료되었습니다.";
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            MeasurementStatusText.Foreground = Brushes.DarkOrange;
+            MeasurementStatusText.Text = "측정 취소 처리가 완료되었습니다.";
         }
         catch (Exception exception)
         {
