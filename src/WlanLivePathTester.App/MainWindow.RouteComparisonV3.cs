@@ -228,8 +228,9 @@ public partial class MainWindow
         string externalTargetText =
             _routeComparisonExternalTargetV3?.Text.Trim()
             ?? string.Empty;
+        // Preserve raw length and edge control characters for Core validation.
         string proxyDirective =
-            _routeComparisonProxyDirectiveV3?.Text.Trim()
+            _routeComparisonProxyDirectiveV3?.Text
             ?? string.Empty;
         Uri? externalTarget = Uri.TryCreate(
                 externalTargetText,
@@ -559,8 +560,7 @@ public partial class MainWindow
         int childCount = VisualTreeHelper.GetChildrenCount(root);
         for (int index = 0; index < childCount; index++)
         {
-            DependencyObject child =
-                VisualTreeHelper.GetChild(root, index);
+            DependencyObject child = VisualTreeHelper.GetChild(root, index);
             if (child is T match)
             {
                 return match;
