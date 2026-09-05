@@ -22,6 +22,7 @@ internal static class ProxyEndpointExactIdentityRetentionTests
     internal static void Run()
     {
         RetainsExactIdentityInMemoryAndExcludesItFromJson();
+        DiagnosticStringExcludesExactIdentityAndNarrativeFields();
         FailedRouteDoesNotInventExactIdentity();
         Console.WriteLine(
             "PASS proxy endpoint exact identity memory-only tests");
@@ -77,6 +78,64 @@ internal static class ProxyEndpointExactIdentityRetentionTests
                 endpoint.SelectedInterfaceFingerprint!,
                 StringComparison.Ordinal),
             "기본 JSON에는 짧은 인터페이스 지문을 유지해야 합니다.");
+    }
+
+    private static void
+        DiagnosticStringExcludesExactIdentityAndNarrativeFields()
+    {
+        ProxyEndpointRouteEvidenceItem endpoint = new(
+            Sequence: 1,
+            EndpointLabel: SecretHost,
+            HostFingerprint: "0123456789",
+            AppliesToScheme: "https",
+            Transport: ProxyEndpointTransport.Http,
+            Port: 8080,
+            RouteStatus: DestinationRouteEvidenceStatus.Success,
+            WlanCorrelationStatus: RouteWlanCorrelationStatus.Matched,
+            SelectedInterfaceFingerprint:
+                RouteInterfaceFingerprint.Create(ExactInterfaceId),
+            SelectedInterfaceCategory:
+                NetworkAdapterCategory.Wireless,
+            SelectedInterfaceIsVirtual: false,
+            SelectedInterfaceIsVpn: false,
+            SelectedInterfaceIsUp: true,
+            SelectedInterfaceHasDefaultGateway: true,
+            ResolvedAddressCount: 1,
+            SuccessfulAddressCount: 1,
+            FailedAddressCount: 0,
+            Message: SecretDescription,
+            Warnings: [SecretHost, SecretDescription])
+        {
+            SelectedInterfaceIdentity = ExactInterfaceId
+        };
+
+        string diagnostic = endpoint.ToString();
+        foreach (string secret in new[]
+                 {
+                     ExactInterfaceId,
+                     SecretHost,
+                     SecretDescription,
+                     "SelectedInterfaceIdentity",
+                     "EndpointLabel",
+                     "Warnings"
+                 })
+        {
+            Ensure(!diagnostic.Contains(
+                    secret,
+                    StringComparison.OrdinalIgnoreCase),
+                $"안전 진단 문자열에 메모리·서술 원문이 남았습니다: {secret}");
+        }
+
+        Ensure(diagnostic.Contains(
+                "호스트 지문 0123456789",
+                StringComparison.Ordinal)
+               && diagnostic.Contains(
+                   RouteInterfaceFingerprint.Create(ExactInterfaceId),
+                   StringComparison.Ordinal)
+               && diagnostic.Contains(
+                   "경로 Success",
+                   StringComparison.Ordinal),
+            "안전 진단 문자열에는 검증된 지문과 상태만 유지해야 합니다.");
     }
 
     private static void FailedRouteDoesNotInventExactIdentity()
