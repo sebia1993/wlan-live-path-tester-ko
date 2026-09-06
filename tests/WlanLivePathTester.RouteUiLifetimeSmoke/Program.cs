@@ -28,7 +28,8 @@ internal static class Program
     private static async Task RunAsync()
     {
         await Task.Yield();
-        var cases = RouteTests.Cases.Concat(ReportTests.Cases).Concat(BasicTests.Cases).ToArray();
+        var cases = RouteTests.Cases.Concat(ReportTests.Cases).Concat(BasicTests.Cases)
+            .Concat(ReportFailureIsolationTests.Cases).ToArray();
         foreach ((string name, Func<Task> run) in cases)
         {
             await run().WaitAsync(TimeSpan.FromSeconds(15));
