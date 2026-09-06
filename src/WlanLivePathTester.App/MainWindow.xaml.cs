@@ -22,66 +22,6 @@ public partial class MainWindow : Window
         InitializeApplicationOperations();
     }
 
-    private void OnReadWlanStatusClick(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            WlanReadResult result = NativeWlanReader.ReadCurrent();
-            WlanSnapshot? connected = result.FirstConnectedInterface;
-
-            if (connected is null)
-            {
-                string interfaceStates = result.Interfaces.Count == 0
-                    ? "무선 인터페이스 정보 없음"
-                    : string.Join(
-                        Environment.NewLine,
-                        result.Interfaces.Select(item =>
-                            $"- {item.InterfaceDescription ?? "이름 없음"}: {item.InterfaceState ?? "상태 불명"}"));
-
-                WlanResultText.Text = $"{result.Message}{Environment.NewLine}{interfaceStates}";
-                return;
-            }
-
-            StringBuilder builder = new();
-            builder.AppendLine(result.Message);
-            builder.AppendLine($"인터페이스: {connected.InterfaceDescription ?? "확인 불가"}");
-            builder.AppendLine($"SSID: {connected.Ssid ?? "확인 불가"}");
-            builder.AppendLine($"BSSID: {connected.Bssid ?? "확인 불가"}");
-            builder.AppendLine($"RSSI: {FormatDbm(connected.RssiDbm)} / 신호 품질: {FormatPercent(connected.SignalQualityPercent)}");
-            builder.AppendLine($"밴드: {WlanChannelCalculator.GetBandName(connected.CenterFrequencyMhz)} / 채널: {FormatNumber(connected.Channel)} / 주파수: {FormatFrequency(connected.CenterFrequencyMhz)}");
-            builder.AppendLine($"PHY: {connected.PhyType ?? "확인 불가"}");
-            builder.AppendLine($"Rx 링크: {FormatLinkSpeed(connected.ReceiveLinkSpeedBps)} / Tx 링크: {FormatLinkSpeed(connected.TransmitLinkSpeedBps)}");
-            builder.AppendLine($"인증: {connected.Authentication ?? "확인 불가"} / 암호화: {connected.Cipher ?? "확인 불가"}");
-
-            if (connected.ReadError is not null)
-            {
-                builder.AppendLine($"부분 제한: {connected.ReadError}");
-            }
-
-            WlanResultText.Text = builder.ToString().TrimEnd();
-        }
-        catch (Exception exception)
-        {
-            WlanResultText.Text = $"WLAN 확인 중 오류가 발생했습니다: {exception.Message}";
-        }
-    }
-
-    private void OnReadProxySettingsClick(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            CurrentUserProxySettings settings = CurrentUserProxySettingsReader.Read();
-
-            ProxyResultText.Text = settings.ReadSucceeded
-                ? $"읽기 성공 · 방식: {settings.Mode} · 자동 감지: {(settings.AutoDetectEnabled ? "사용" : "미사용")} · PAC: {(settings.AutoConfigUrl is null ? "없음" : "설정됨")} · 수동 프록시: {(settings.ManualProxy is null ? "없음" : "설정됨")}"
-                : $"읽기 실패 · Win32 오류: {settings.Win32Error}";
-        }
-        catch (Exception exception)
-        {
-            ProxyResultText.Text = $"확인 중 오류가 발생했습니다: {exception.Message}";
-        }
-    }
-
     private async void OnResolveProxyRouteClick(object sender, RoutedEventArgs e)
     {
         using ApplicationOperationUiLease? lease = TryBeginUiApplicationOperation(
@@ -264,10 +204,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        _cancelMeasurement();
+        ApplicationOperationCancellationStatus status = _applicationOperationUi?.RequestCancellation()
+            ?? ApplicationOperationCancellationStatus.NotActive;
         CancelMeasurementButton.IsEnabled = false;
-        MeasurementStatusText.Foreground = Brushes.DarkOrange;
-        MeasurementStatusText.Text = "취소 요청됨 · 현재 WinHTTP 호출이 반환된 뒤 다음 단계와 남은 대상을 중단합니다.";
+        MeasurementStatusText.Foreground = status == ApplicationOperationCancellationStatus.CallbackFailed
+            ? Brushes.DarkRed : Brushes.DarkOrange;
+        string failure = FormatApplicationCancellationFailure(status);
+        MeasurementStatusText.Text = string.IsNullOrEmpty(failure)
+            ? "취소 요청됨 · 현재 WinHTTP 호출이 반환된 뒤 다음 단계와 남은 대상을 중단합니다."
+            : failure;
     }
 
     private void SetMeasurementBusy(bool busy)
@@ -335,14 +280,9 @@ public partial class MainWindow : Window
         target.Text = $"입력 오류: {message}";
     }
 
-    private static string FormatMeasurementResults(
-        IReadOnlyList<DownloadMeasurementResult> results)
+    private static string FormatMeasurementResults(IReadOnlyList<DownloadMeasurementResult> results)
     {
-        if (results.Count == 0)
-        {
-            return "측정 결과가 없습니다.";
-        }
-
+        if (results.Count == 0) return "측정 결과가 없습니다.";
         StringBuilder builder = new();
         for (int index = 0; index < results.Count; index++)
         {
@@ -351,10 +291,8 @@ public partial class MainWindow : Window
                 builder.AppendLine();
                 builder.AppendLine(new string('-', 52));
             }
-
             builder.Append(FormatMeasurementResult(results[index]));
         }
-
         return builder.ToString().TrimEnd();
     }
 
@@ -370,25 +308,18 @@ public partial class MainWindow : Window
         builder.AppendLine($"TTFB: {FormatMilliseconds(result.TimeToFirstByte)} / 스트림: {result.StreamsCompleted}/{result.StreamsRequested}");
         builder.AppendLine($"최종 URL: {result.FinalUrl}");
         builder.AppendLine($"응답 메타데이터: {FormatResponseMetadata(result.ResponseHeaders)}");
-
         if (result.Samples.Count > 0)
         {
             double minimum = result.Samples.Min(sample => sample.Mbps);
             double maximum = result.Samples.Max(sample => sample.Mbps);
             builder.AppendLine($"구간 샘플: {result.Samples.Count}개 / {minimum:F1}~{maximum:F1} Mbps");
         }
-
-        if (!string.IsNullOrWhiteSpace(result.ErrorCode))
-        {
-            builder.AppendLine($"오류 코드: {result.ErrorCode}");
-        }
-
+        if (!string.IsNullOrWhiteSpace(result.ErrorCode)) builder.AppendLine($"오류 코드: {result.ErrorCode}");
         builder.Append($"설명: {result.Message}");
         return builder.ToString();
     }
 
-    private static string FormatResponseMetadata(
-        IReadOnlyDictionary<string, string> headers)
+    private static string FormatResponseMetadata(IReadOnlyDictionary<string, string> headers)
     {
         List<string> values = [];
         AddHeader(values, headers, "Age");
@@ -396,123 +327,72 @@ public partial class MainWindow : Window
         AddHeader(values, headers, "X-Cache");
         AddHeader(values, headers, "Content-Length");
         AddHeader(values, headers, "Content-Range");
-
-        if (headers.ContainsKey("Via"))
-        {
-            values.Add("Via=[설정됨]");
-        }
-
-        return values.Count == 0
-            ? "선택 헤더 없음"
-            : string.Join(" · ", values);
+        if (headers.ContainsKey("Via")) values.Add("Via=[설정됨]");
+        return values.Count == 0 ? "선택 헤더 없음" : string.Join(" · ", values);
     }
 
-    private static void AddHeader(
-        ICollection<string> values,
-        IReadOnlyDictionary<string, string> headers,
-        string name)
+    private static void AddHeader(ICollection<string> values, IReadOnlyDictionary<string, string> headers, string name)
     {
-        if (headers.TryGetValue(name, out string? value)
-            && !string.IsNullOrWhiteSpace(value))
-        {
-            values.Add($"{name}={value}");
-        }
+        if (headers.TryGetValue(name, out string? value) && !string.IsNullOrWhiteSpace(value)) values.Add($"{name}={value}");
     }
 
-    private static Brush GetMeasurementBrush(MeasurementStatus status) =>
-        status switch
-        {
-            MeasurementStatus.Success => Brushes.DarkGreen,
-            MeasurementStatus.PartialSuccess => Brushes.DarkOrange,
-            MeasurementStatus.Canceled => Brushes.DarkOrange,
-            _ => Brushes.DarkRed
-        };
-
-    private static string FormatMeasurementStatus(MeasurementStatus status) =>
-        status switch
-        {
-            MeasurementStatus.NotRun => "미실행",
-            MeasurementStatus.Success => "성공",
-            MeasurementStatus.PartialSuccess => "부분 성공",
-            MeasurementStatus.Failed => "실패",
-            MeasurementStatus.TimedOut => "시간 초과",
-            MeasurementStatus.Canceled => "취소",
-            MeasurementStatus.Blocked => "정책 차단",
-            MeasurementStatus.ProxyAuthenticationRequired => "프록시 인증 실패",
-            MeasurementStatus.PathMismatch => "기대 경로 불일치",
-            _ => status.ToString()
-        };
-
-    private static string FormatProxyUsage(bool? proxyWasUsed) =>
-        proxyWasUsed switch
-        {
-            true => "사용",
-            false => "미사용",
-            null => "확인 불가"
-        };
-
-    private static string FormatBytes(long bytes) =>
-        $"{bytes / 1024d / 1024d:F2} MiB";
-
-    private static string FormatMbps(double? value) =>
-        value is double mbps ? $"{mbps:F1} Mbps" : "계산 안 함";
-
-    private static string FormatMilliseconds(TimeSpan? value) =>
-        value is TimeSpan duration ? $"{duration.TotalMilliseconds:F0} ms" : "확인 불가";
-
-    private static string FormatProxyStatus(ProxyResolutionStatus status) =>
-        status switch
-        {
-            ProxyResolutionStatus.Success => "성공",
-            ProxyResolutionStatus.InvalidUrl => "URL 오류",
-            ProxyResolutionStatus.UnsupportedPlatform => "지원하지 않는 운영체제",
-            ProxyResolutionStatus.ConfigurationReadFailed => "프록시 설정 읽기 실패",
-            ProxyResolutionStatus.ConfigurationInvalid => "프록시 설정 해석 실패",
-            ProxyResolutionStatus.AutoProxyAuthenticationFailed => "PAC/WPAD 인증 실패",
-            ProxyResolutionStatus.AutoProxyFailed => "PAC/WPAD 판정 실패",
-            ProxyResolutionStatus.TimedOut => "시간 초과",
-            _ => "Windows API 오류"
-        };
-
-    private static string FormatProxySource(ProxyConfigurationSource source) =>
-        source switch
-        {
-            ProxyConfigurationSource.None => "설정 없음",
-            ProxyConfigurationSource.Manual => "수동 프록시 또는 바이패스",
-            ProxyConfigurationSource.Wpad => "WPAD 자동 검색",
-            ProxyConfigurationSource.Pac => "명시적 PAC",
-            ProxyConfigurationSource.WpadThenPac => "WPAD 실패 후 명시적 PAC",
-            ProxyConfigurationSource.ManualFallback => "PAC/WPAD 실패 후 수동 설정",
-            _ => "확인 불가"
-        };
-
-    private static string FormatExpectation(ProxyPathExpectation expectation) =>
-        expectation switch
-        {
-            ProxyPathExpectation.Match => "일치",
-            ProxyPathExpectation.Mismatch => "불일치",
-            _ => "판단 불가"
-        };
-
-    private static string FormatExpectedPath(NetworkPathKind pathKind) =>
-        pathKind == NetworkPathKind.Internal
-            ? "내부망 — DIRECT 예상"
-            : "외부망 — PROXY 예상";
-
-    private static string FormatDbm(int? value) =>
-        value is int rssi ? $"{rssi} dBm" : "확인 불가";
-
-    private static string FormatPercent(int? value) =>
-        value is int percent ? $"{percent}%" : "확인 불가";
-
-    private static string FormatNumber(uint? value) =>
-        value?.ToString() ?? "확인 불가";
-
-    private static string FormatFrequency(uint? value) =>
-        value is uint frequency ? $"{frequency} MHz" : "확인 불가";
-
-    private static string FormatLinkSpeed(ulong? value) =>
-        value is ulong bitsPerSecond
-            ? $"{bitsPerSecond / 1_000_000d:F1} Mbps"
-            : "확인 불가";
+    private static Brush GetMeasurementBrush(MeasurementStatus status) => status switch
+    {
+        MeasurementStatus.Success => Brushes.DarkGreen,
+        MeasurementStatus.PartialSuccess => Brushes.DarkOrange,
+        MeasurementStatus.Canceled => Brushes.DarkOrange,
+        _ => Brushes.DarkRed
+    };
+    private static string FormatMeasurementStatus(MeasurementStatus status) => status switch
+    {
+        MeasurementStatus.NotRun => "미실행",
+        MeasurementStatus.Success => "성공",
+        MeasurementStatus.PartialSuccess => "부분 성공",
+        MeasurementStatus.Failed => "실패",
+        MeasurementStatus.TimedOut => "시간 초과",
+        MeasurementStatus.Canceled => "취소",
+        MeasurementStatus.Blocked => "정책 차단",
+        MeasurementStatus.ProxyAuthenticationRequired => "프록시 인증 실패",
+        MeasurementStatus.PathMismatch => "기대 경로 불일치",
+        _ => status.ToString()
+    };
+    private static string FormatProxyUsage(bool? proxyWasUsed) => proxyWasUsed switch
+    {
+        true => "사용", false => "미사용", null => "확인 불가"
+    };
+    private static string FormatBytes(long bytes) => $"{bytes / 1024d / 1024d:F2} MiB";
+    private static string FormatMbps(double? value) => value is double mbps ? $"{mbps:F1} Mbps" : "계산 안 함";
+    private static string FormatMilliseconds(TimeSpan? value) => value is TimeSpan duration ? $"{duration.TotalMilliseconds:F0} ms" : "확인 불가";
+    private static string FormatProxyStatus(ProxyResolutionStatus status) => status switch
+    {
+        ProxyResolutionStatus.Success => "성공",
+        ProxyResolutionStatus.InvalidUrl => "URL 오류",
+        ProxyResolutionStatus.UnsupportedPlatform => "지원하지 않는 운영체제",
+        ProxyResolutionStatus.ConfigurationReadFailed => "프록시 설정 읽기 실패",
+        ProxyResolutionStatus.ConfigurationInvalid => "프록시 설정 해석 실패",
+        ProxyResolutionStatus.AutoProxyAuthenticationFailed => "PAC/WPAD 인증 실패",
+        ProxyResolutionStatus.AutoProxyFailed => "PAC/WPAD 판정 실패",
+        ProxyResolutionStatus.TimedOut => "시간 초과",
+        _ => "Windows API 오류"
+    };
+    private static string FormatProxySource(ProxyConfigurationSource source) => source switch
+    {
+        ProxyConfigurationSource.None => "설정 없음",
+        ProxyConfigurationSource.Manual => "수동 프록시 또는 바이패스",
+        ProxyConfigurationSource.Wpad => "WPAD 자동 검색",
+        ProxyConfigurationSource.Pac => "명시적 PAC",
+        ProxyConfigurationSource.WpadThenPac => "WPAD 실패 후 명시적 PAC",
+        ProxyConfigurationSource.ManualFallback => "PAC/WPAD 실패 후 수동 설정",
+        _ => "확인 불가"
+    };
+    private static string FormatExpectation(ProxyPathExpectation expectation) => expectation switch
+    {
+        ProxyPathExpectation.Match => "일치", ProxyPathExpectation.Mismatch => "불일치", _ => "판단 불가"
+    };
+    private static string FormatExpectedPath(NetworkPathKind pathKind) => pathKind == NetworkPathKind.Internal ? "내부망 — DIRECT 예상" : "외부망 — PROXY 예상";
+    private static string FormatDbm(int? value) => value is int rssi ? $"{rssi} dBm" : "확인 불가";
+    private static string FormatPercent(int? value) => value is int percent ? $"{percent}%" : "확인 불가";
+    private static string FormatNumber(uint? value) => value?.ToString() ?? "확인 불가";
+    private static string FormatFrequency(uint? value) => value is uint frequency ? $"{frequency} MHz" : "확인 불가";
+    private static string FormatLinkSpeed(ulong? value) => value is ulong bitsPerSecond ? $"{bitsPerSecond / 1_000_000d:F1} Mbps" : "확인 불가";
 }
