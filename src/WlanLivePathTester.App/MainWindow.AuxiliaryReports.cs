@@ -224,7 +224,7 @@ public partial class MainWindow
         Dispatcher.VerifyAccess();
         if (_applicationOperationWindowClosed || section.IsDisposed || section.IsRunning
             || CurrentApplicationOperation.IsBusy || CurrentApplicationOperation.ShutdownRequested
-            || _applicationOperationClosePending || _routeProxyClosePending || _routeReportCloseRequested) return;
+            || _applicationOperationClosePending) return;
         string? path = directory ? section.LatestExport?.OutputDirectory : section.LatestExport?.HtmlPath;
         if (string.IsNullOrWhiteSpace(path) || !(directory ? Directory.Exists(path) : File.Exists(path)))
         {
