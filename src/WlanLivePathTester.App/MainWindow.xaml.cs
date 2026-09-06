@@ -144,7 +144,8 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             ProxyRouteResultText.Foreground = Brushes.DarkRed;
-            ProxyRouteResultText.Text = $"프록시 경로 확인 중 오류가 발생했습니다: {exception.Message}";
+            ProxyRouteResultText.Text =
+                $"프록시 경로 확인 오류: {exception.GetType().Name}. 예외 원문은 표시하지 않았습니다.";
         }
         finally
         {
@@ -267,49 +268,6 @@ public partial class MainWindow : Window
         CancelMeasurementButton.IsEnabled = false;
         MeasurementStatusText.Foreground = Brushes.DarkOrange;
         MeasurementStatusText.Text = "취소 요청됨 · 현재 WinHTTP 호출이 반환된 뒤 다음 단계와 남은 대상을 중단합니다.";
-    }
-
-    private async Task RunMeasurementOperationAsync(
-        Func<CancellationToken, Task> operation,
-        string runningMessage)
-    {
-        using CancellationTokenSource cancellation = new();
-        using ApplicationOperationUiLease? lease = TryBeginUiApplicationOperation(
-            ApplicationOperationKind.DownloadMeasurement, cancellation.Cancel);
-        if (lease is null) return;
-
-        _measurementRunning = true;
-        _cancelMeasurement = () => lease.RequestCancellation();
-        SetMeasurementBusy(true);
-        MeasurementStatusText.Foreground = Brushes.DarkSlateGray;
-        MeasurementStatusText.Text = runningMessage;
-
-        try
-        {
-            await operation(cancellation.Token);
-            MeasurementStatusText.Foreground = cancellation.IsCancellationRequested
-                ? Brushes.DarkOrange
-                : Brushes.DarkGreen;
-            MeasurementStatusText.Text = cancellation.IsCancellationRequested
-                ? "측정 취소 처리가 완료되었습니다."
-                : "측정이 완료되었습니다.";
-        }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-            MeasurementStatusText.Foreground = Brushes.DarkOrange;
-            MeasurementStatusText.Text = "측정 취소 처리가 완료되었습니다.";
-        }
-        catch (Exception exception)
-        {
-            MeasurementStatusText.Foreground = Brushes.DarkRed;
-            MeasurementStatusText.Text = $"측정 처리 중 오류가 발생했습니다: {exception.Message}";
-        }
-        finally
-        {
-            _cancelMeasurement = null;
-            _measurementRunning = false;
-            SetMeasurementBusy(false);
-        }
     }
 
     private void SetMeasurementBusy(bool busy)
