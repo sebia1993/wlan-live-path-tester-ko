@@ -121,7 +121,7 @@ public partial class MainWindow
         {
             await session.RequestShutdownAsync();
             _applicationOperationClosePending = false;
-            if (KeepWindowOpenForLocalReportReview())
+            if (KeepWindowOpenForLocalReportReview() || KeepWindowOpenForAuxiliaryReportReview())
             {
                 session.CancelShutdownRequest();
                 return;
@@ -150,6 +150,7 @@ public partial class MainWindow
     {
         _applicationOperationWindowClosed = true;
         DisposeNetworkAdapterRefreshController();
+        DisposeAuxiliaryReportSections();
         _applicationOperationUi?.RequestCancellation();
         Closing -= OnApplicationOperationClosing;
         Closed -= OnApplicationOperationClosed;
@@ -166,7 +167,7 @@ public partial class MainWindow
             ApplicationOperationKind.RouteComparison => "내부 DIRECT·프록시 경로 비교",
             ApplicationOperationKind.WindowsProxyImport => "Windows 프록시 판정 가져오기",
             ApplicationOperationKind.RouteComparisonReportSave => "경로 비교 보고서 저장",
-            ApplicationOperationKind.DiagnosticReportSave => "통합 진단 보고서 저장",
+            ApplicationOperationKind.DiagnosticReportSave => "진단 보고서 저장",
             ApplicationOperationKind.NetworkAdapterDiagnostics => "네트워크 어댑터 진단",
             ApplicationOperationKind.NetworkEnvironmentCapture => "네트워크 환경 수집",
             _ => "알 수 없는 작업"
