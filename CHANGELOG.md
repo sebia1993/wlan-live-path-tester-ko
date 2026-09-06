@@ -6,6 +6,11 @@
 
 ### Added
 
+- 기존 LocalDiagnosticReport에 optional 내부 DIRECT–프록시 경로 snapshot과 schema 1.2 지원
+- JSON·CSV·오프라인 HTML에 별도 완료 시각·프록시 출처·정확 비교·후보별 안전 증거 표시
+- 통합 보고서 저장을 같은 UI/Core coordinator의 DiagnosticReportSave에 연결
+- 통합 보고서 형식·호환성 9개와 실제 WPF 저장 수명 8개, 총 17개 UnifiedReportSmoke 그룹 및 Release 검증 연결
+- `docs/UNIFIED_ROUTE_REPORT.md`에 통합 스키마·Finding·저장 수명과 잔여 한계 기록
 - 반복 측정 탭의 전용 중지 버튼과 `RepeatedMeasurement` 작업 종류
 - 실제 WPF 버튼·Dispatcher·창 종료를 검증하는 `RepeatedUiSmoke` 11개 그룹 및 Release 검증 연결
 - `docs/REPEATED_MEASUREMENT_LIFECYCLE.md`에 취소·진행 알림·결과 보존 계약 기록
@@ -22,6 +27,9 @@
 
 ### Fixed
 
+- 통합 보고서 저장 중 중복 생성·다른 진단 시작·조기 창 종료 가능성
+- 종료 대기 중 통합 저장 실패가 창 닫기로 가려지는 문제: 오류 검토를 위해 창 유지
+- 통합 경로 Finding 중복 및 일반 NO_CLEAR_FAILURE_PATTERN과 구체적 경로 판정의 충돌
 - 이전 반복 대상/실행에서 지연된 진행 알림이 다음 대상 또는 최종 결과를 덮어쓰는 경계
 - 반복 측정의 취소 결과 이후 다른 대상이 계속 시작될 수 있는 바깥 반복문 경계
 - 반복 측정 중 다른 탭 잠금으로 기본 중지 버튼을 사용할 수 없던 사용성
@@ -33,6 +41,9 @@
 
 ### Changed
 
+- 통합 보고서의 기존 9개 positional 생성자·Deconstruct 유지, 경로 없는 이전 JSON/CSV/HTML 호환
+- 경로 증거와 통합 보고서 생성 시각을 구분하고 동시 측정으로 오해하지 않도록 한계 명시
+- 통합 저장 실패 시 이전 성공 경로 유지, 예외 원문 대신 유형 표시, 실제 쓰기 완료 후 lease 반환
 - 단일·반복 측정이 같은 typed UI lease runner를 사용하고 기존 2인자 단일 측정 진입점 호환 유지
 - 반복 실행 시작 시 대상 배열·HEAD 옵션 스냅샷, 취소/오류 시 확보한 결과 및 미시작 대상 수 표시
 - 사용자 토큰 취소로 발생한 다운로드 `OperationCanceledException`을 일반 오류가 아닌 취소 완료로 표시
@@ -44,11 +55,12 @@
 - 작업 조정 UI와 합성 검증에 런타임 패키지, AI·로컬 AI, 외부 분석 API, 텔레메트리, 업로드 또는 자동 업데이트를 추가하지 않음
 - 동기 WinHTTP 실행 중 네이티브 핸들을 강제로 닫지 않으며 실제 호출 반환 전에 완료로 처리하지 않음
 - 원문 입력 검증 실패 시 실행 가능한 프록시 지시문을 반환하지 않고 대상별 실패를 수동 프록시 또는 DIRECT로 대체하지 않음
+- 통합 경로 섹션은 기존 안전 mapper를 재사용하며 원본 RouteEvidence·프록시 문자열·전체 GUID를 직렬화하지 않음
 
 ### Planned
 
-- 일반 로컬 경로 확인·기타 보고서 저장·자동 어댑터 새로고침의 공통 작업 수명 연결
-- 경로 비교의 통합 진단 보고서 섹션, 나머지 원문 입력 경계 감사, 문서/공개 릴리스 검증
+- 일반 로컬 경로 확인·다른 전용 보고서 저장·자동 어댑터 새로고침의 공통 작업 수명 연결
+- 나머지 원문 입력 경계 감사, 문서/공개 릴리스 검증
 - `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반 비동기 WinHTTP 전송 계층
 - 목적지별 Windows route·interface metric을 개인정보 노출 없이 요약하는 로컬 경로 판정
 - Authenticode 인증서 확보 후 빌드 서명과 서명 검증

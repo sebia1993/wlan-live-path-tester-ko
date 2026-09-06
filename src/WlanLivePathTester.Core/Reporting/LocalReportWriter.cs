@@ -20,6 +20,7 @@ public static class LocalReportWriter
     {
         ArgumentNullException.ThrowIfNull(report);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
+        report = LocalReportRouteComparison.Normalize(report);
 
         string fullDirectory = Path.GetFullPath(outputDirectory);
         Directory.CreateDirectory(fullDirectory);
@@ -69,13 +70,14 @@ public static class LocalReportWriter
     public static string RenderJson(LocalDiagnosticReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
-        return JsonSerializer.Serialize(report, JsonOptions)
+        return JsonSerializer.Serialize(LocalReportRouteComparison.Normalize(report), JsonOptions)
             + Environment.NewLine;
     }
 
     public static string RenderCsv(LocalDiagnosticReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
+        report = LocalReportRouteComparison.Normalize(report);
 
         List<CsvRow> rows = [];
         AddMetadataRows(rows, report);
@@ -87,6 +89,8 @@ public static class LocalReportWriter
             report.StructuredMeasurements
                 ?? Array.Empty<ReportMeasurementSection>());
         AddObservationRows(rows, report.BrowserObservation);
+        foreach (LocalRouteReportRow row in LocalReportRouteComparison.Rows(report.InternalProxyRouteComparison))
+            Add(rows, row.Section, row.Key, row.Value);
         AddFindingRows(rows, report.Findings);
         AddLimitationRows(rows, report.Limitations);
 
@@ -230,11 +234,7 @@ public static class LocalReportWriter
         }
 
         Add(rows, "browserObservation", "status", observation.Status);
-        Add(
-            rows,
-            "browserObservation",
-            "terminationReason",
-            observation.TerminationReason);
+        Add(rows, "browserObservation", "terminationReason", observation.TerminationReason);
         Add(rows, "browserObservation", "startedAt", Iso(observation.StartedAt));
         Add(rows, "browserObservation", "completedAt", Iso(observation.CompletedAt));
         Add(rows, "browserObservation", "observedSeconds", Number(observation.ObservedSeconds));
@@ -302,49 +302,31 @@ public static class LocalReportWriter
     {
         for (int index = 0; index < limitations.Count; index++)
         {
-            Add(
-                rows,
-                "limitation",
-                (index + 1).ToString(CultureInfo.InvariantCulture),
-                limitations[index]);
+            Add(rows, "limitation", (index + 1).ToString(CultureInfo.InvariantCulture), limitations[index]);
         }
     }
 
-    private static string GetAvailableBaseName(
-        string directory,
-        string desired)
+    private static string GetAvailableBaseName(string directory, string desired)
     {
         for (int suffix = 0; suffix <= 9999; suffix++)
         {
-            string candidate = suffix == 0
-                ? desired
-                : $"{desired}_{suffix}";
+            string candidate = suffix == 0 ? desired : $"{desired}_{suffix}";
             if (!File.Exists(Path.Combine(directory, candidate + ".json"))
                 && !File.Exists(Path.Combine(directory, candidate + ".csv"))
                 && !File.Exists(Path.Combine(directory, candidate + ".html"))
-                && !File.Exists(Path.Combine(
-                    directory,
-                    candidate + "_SHA256SUMS.txt")))
+                && !File.Exists(Path.Combine(directory, candidate + "_SHA256SUMS.txt")))
             {
                 return candidate;
             }
         }
-
         throw new IOException("사용 가능한 보고서 파일 이름을 만들지 못했습니다.");
     }
 
-    private static void WriteAtomic(
-        string destination,
-        string content,
-        Encoding encoding)
+    private static void WriteAtomic(string destination, string content, Encoding encoding)
     {
         string directory = Path.GetDirectoryName(destination)
-            ?? throw new InvalidOperationException(
-                "보고서 출력 디렉터리를 확인할 수 없습니다.");
-        string temporary = Path.Combine(
-            directory,
-            $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.tmp");
-
+            ?? throw new InvalidOperationException("보고서 출력 디렉터리를 확인할 수 없습니다.");
+        string temporary = Path.Combine(directory, $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.tmp");
         try
         {
             File.WriteAllText(temporary, content, encoding);
@@ -352,25 +334,17 @@ public static class LocalReportWriter
         }
         finally
         {
-            if (File.Exists(temporary))
-            {
-                File.Delete(temporary);
-            }
+            if (File.Exists(temporary)) File.Delete(temporary);
         }
     }
 
     private static string ComputeSha256(string path)
     {
         using FileStream stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream))
-            .ToLowerInvariant();
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
-    private static void Add(
-        ICollection<CsvRow> rows,
-        string section,
-        string key,
-        string? value) =>
+    private static void Add(ICollection<CsvRow> rows, string section, string key, string? value) =>
         rows.Add(new CsvRow(section, key, value ?? string.Empty));
 
     private static string Csv(string value)
@@ -379,26 +353,11 @@ public static class LocalReportWriter
         return '"' + safe.Replace("\"", "\"\"") + '"';
     }
 
-    private static string Boolean(bool value) =>
-        value.ToString(CultureInfo.InvariantCulture);
-
-    private static string NullableBoolean(bool? value) =>
-        value.HasValue
-            ? Boolean(value.Value)
-            : string.Empty;
-
-    private static string Number<T>(T? value)
-        where T : struct, IFormattable =>
-        value.HasValue
-            ? value.Value.ToString(null, CultureInfo.InvariantCulture)
-            : string.Empty;
-
-    private static string Iso(DateTimeOffset value) =>
-        value.ToString("O", CultureInfo.InvariantCulture);
-
-    private static string Iso(DateTimeOffset? value) =>
-        value?.ToString("O", CultureInfo.InvariantCulture)
-        ?? string.Empty;
-
+    private static string Boolean(bool value) => value.ToString(CultureInfo.InvariantCulture);
+    private static string NullableBoolean(bool? value) => value.HasValue ? Boolean(value.Value) : string.Empty;
+    private static string Number<T>(T? value) where T : struct, IFormattable =>
+        value.HasValue ? value.Value.ToString(null, CultureInfo.InvariantCulture) : string.Empty;
+    private static string Iso(DateTimeOffset value) => value.ToString("O", CultureInfo.InvariantCulture);
+    private static string Iso(DateTimeOffset? value) => value?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;
     private sealed record CsvRow(string Section, string Key, string Value);
 }

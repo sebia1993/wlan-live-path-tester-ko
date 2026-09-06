@@ -9,17 +9,16 @@ internal static class LocalHtmlReportRenderer
     internal static string Render(LocalDiagnosticReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
-
+        report = LocalReportRouteComparison.Normalize(report);
         StringBuilder builder = new(capacity: 48 * 1024);
         AppendDocumentStart(builder, report);
         AppendPrivacyNotice(builder, report.Metadata);
         AppendSummaryGrid(builder, report);
-        AppendStructuredMeasurements(
-            builder,
-            report.StructuredMeasurements
-                ?? Array.Empty<ReportMeasurementSection>());
+        AppendStructuredMeasurements(builder,
+            report.StructuredMeasurements ?? Array.Empty<ReportMeasurementSection>());
         AppendLegacyMeasurementSection(builder, report.Measurements);
         AppendObservationSection(builder, report.BrowserObservation);
+        LocalReportRouteComparison.AppendHtml(builder, report.InternalProxyRouteComparison);
         AppendFindingSection(builder, report.Findings);
         AppendLimitations(builder, report.Limitations);
         builder.Append("<footer class=\"small footer\">이 파일은 WLAN Live Path Tester KO가 현재 PC에서 생성했습니다.</footer>");
@@ -27,9 +26,7 @@ internal static class LocalHtmlReportRenderer
         return builder.ToString();
     }
 
-    private static void AppendDocumentStart(
-        StringBuilder builder,
-        LocalDiagnosticReport report)
+    private static void AppendDocumentStart(StringBuilder builder, LocalDiagnosticReport report)
     {
         builder.Append("<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">");
         builder.Append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
@@ -49,16 +46,12 @@ internal static class LocalHtmlReportRenderer
         builder.Append("@media(max-width:640px){main{padding:16px}.kv th{width:42%}.samples{overflow:auto}.grid{display:block}}");
         builder.Append("@media print{body{background:#fff}.card,.measure{box-shadow:none;break-inside:avoid}main{max-width:none;padding:0}.samples{max-height:none;overflow:visible}}");
         builder.Append("</style></head><body><main><header><h1>WLAN Live Path Tester KO</h1><div class=\"sub\">로컬 네트워크 진단 보고서 · ");
-        Html(
-            builder,
-            report.Metadata.GeneratedAt.ToLocalTime()
-                .ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture));
+        Html(builder, report.Metadata.GeneratedAt.ToLocalTime()
+            .ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture));
         builder.Append("</div></header>");
     }
 
-    private static void AppendPrivacyNotice(
-        StringBuilder builder,
-        ReportMetadata metadata)
+    private static void AppendPrivacyNotice(StringBuilder builder, ReportMetadata metadata)
     {
         builder.Append("<section class=\"card privacy\"><h2>데이터 처리</h2><p>");
         Html(builder, metadata.DataHandlingStatement);
@@ -67,12 +60,9 @@ internal static class LocalHtmlReportRenderer
         builder.Append(" · 이 HTML은 외부 리소스와 스크립트를 포함하지 않습니다.</p></section>");
     }
 
-    private static void AppendSummaryGrid(
-        StringBuilder builder,
-        LocalDiagnosticReport report)
+    private static void AppendSummaryGrid(StringBuilder builder, LocalDiagnosticReport report)
     {
         builder.Append("<div class=\"grid\">");
-
         builder.Append("<section class=\"card\"><h2>실행 정보</h2><table class=\"kv\">");
         Row(builder, "앱 버전", report.Metadata.ApplicationVersion);
         Row(builder, "운영체제", report.Metadata.OperatingSystem);
@@ -80,7 +70,6 @@ internal static class LocalHtmlReportRenderer
         Row(builder, "문화권", report.Metadata.Culture);
         Row(builder, "스키마", report.SchemaVersion);
         builder.Append("</table></section>");
-
         builder.Append("<section class=\"card\"><h2>WLAN</h2><table class=\"kv\">");
         Row(builder, "연결", report.Wlan.IsConnected ? "연결됨" : "연결 안 됨");
         Row(builder, "인터페이스", report.Wlan.InterfaceDescription);
@@ -89,20 +78,11 @@ internal static class LocalHtmlReportRenderer
         Row(builder, "BSSID", report.Wlan.Bssid);
         Row(builder, "RSSI", Unit(report.Wlan.RssiDbm, "dBm"));
         Row(builder, "신호 품질", Unit(report.Wlan.SignalQualityPercent, "%"));
-        Row(
-            builder,
-            "밴드 / 채널",
-            $"{report.Wlan.Band} / {Number(report.Wlan.Channel, "확인 불가")}");
+        Row(builder, "밴드 / 채널", $"{report.Wlan.Band} / {Number(report.Wlan.Channel, "확인 불가")}");
         Row(builder, "중심 주파수", Unit(report.Wlan.CenterFrequencyMhz, "MHz"));
         Row(builder, "PHY", report.Wlan.PhyType);
-        Row(
-            builder,
-            "Rx / Tx 링크",
-            $"{Unit(report.Wlan.ReceiveLinkMbps, "Mbps")} / {Unit(report.Wlan.TransmitLinkMbps, "Mbps")}");
-        Row(
-            builder,
-            "인증 / 암호화",
-            $"{report.Wlan.Authentication} / {report.Wlan.Cipher}");
+        Row(builder, "Rx / Tx 링크", $"{Unit(report.Wlan.ReceiveLinkMbps, "Mbps")} / {Unit(report.Wlan.TransmitLinkMbps, "Mbps")}");
+        Row(builder, "인증 / 암호화", $"{report.Wlan.Authentication} / {report.Wlan.Cipher}");
         builder.Append("</table>");
         if (!string.IsNullOrWhiteSpace(report.Wlan.ReadError))
         {
@@ -111,16 +91,12 @@ internal static class LocalHtmlReportRenderer
             builder.Append("</p>");
         }
         builder.Append("</section>");
-
         builder.Append("<section class=\"card\"><h2>프록시 설정</h2><table class=\"kv\">");
         Row(builder, "읽기", report.Proxy.ReadSucceeded ? "성공" : "실패");
         Row(builder, "방식", report.Proxy.Mode);
         Row(builder, "자동 감지", report.Proxy.AutoDetectEnabled ? "사용" : "미사용");
         Row(builder, "PAC", report.Proxy.PacConfigured ? "설정됨" : "없음");
-        Row(
-            builder,
-            "수동 프록시",
-            report.Proxy.ManualProxyConfigured ? "설정됨" : "없음");
+        Row(builder, "수동 프록시", report.Proxy.ManualProxyConfigured ? "설정됨" : "없음");
         Row(builder, "바이패스", report.Proxy.BypassConfigured ? "설정됨" : "없음");
         Row(builder, "Win32 오류", Number(report.Proxy.Win32Error, "없음"));
         builder.Append("</table><p class=\"small\">");
@@ -128,9 +104,7 @@ internal static class LocalHtmlReportRenderer
         builder.Append("</p></section></div>");
     }
 
-    private static void AppendStructuredMeasurements(
-        StringBuilder builder,
-        IReadOnlyList<ReportMeasurementSection> measurements)
+    private static void AppendStructuredMeasurements(StringBuilder builder, IReadOnlyList<ReportMeasurementSection> measurements)
     {
         builder.Append("<section class=\"card\"><h2>구조화 다운로드 측정</h2>");
         if (measurements.Count == 0)
@@ -138,7 +112,6 @@ internal static class LocalHtmlReportRenderer
             builder.Append("<p>현재 앱 실행 중 완료된 내부·외부 다운로드 측정이 없습니다.</p></section>");
             return;
         }
-
         foreach (ReportMeasurementSection measurement in measurements)
         {
             builder.Append("<article class=\"measure\"><h3>");
@@ -152,28 +125,13 @@ internal static class LocalHtmlReportRenderer
             builder.Append("\">신뢰도 ");
             Html(builder, measurement.Confidence);
             builder.Append("</span></p><table class=\"kv\">");
-            Row(
-                builder,
-                "측정 시각",
-                $"{LocalTime(measurement.StartedAt)} ~ {LocalTime(measurement.CompletedAt)}");
+            Row(builder, "측정 시각", $"{LocalTime(measurement.StartedAt)} ~ {LocalTime(measurement.CompletedAt)}");
             Row(builder, "소요 시간", Unit(measurement.DurationSeconds, "초"));
             Row(builder, "수신량", FormatBytes(measurement.BytesReceived));
-            Row(
-                builder,
-                "평균 / 최고 처리량",
-                $"{Unit(measurement.AverageMbps, "Mbps")} / {Unit(measurement.PeakMbps, "Mbps")}");
-            Row(
-                builder,
-                "TTFB",
-                Unit(measurement.TimeToFirstByteMilliseconds, "ms"));
-            Row(
-                builder,
-                "HTTP / 프록시",
-                $"{Number(measurement.HttpStatusCode, "없음")} / {Boolean(measurement.ProxyWasUsed)}");
-            Row(
-                builder,
-                "스트림",
-                $"{measurement.StreamsCompleted}/{measurement.StreamsRequested}");
+            Row(builder, "평균 / 최고 처리량", $"{Unit(measurement.AverageMbps, "Mbps")} / {Unit(measurement.PeakMbps, "Mbps")}");
+            Row(builder, "TTFB", Unit(measurement.TimeToFirstByteMilliseconds, "ms"));
+            Row(builder, "HTTP / 프록시", $"{Number(measurement.HttpStatusCode, "없음")} / {Boolean(measurement.ProxyWasUsed)}");
+            Row(builder, "스트림", $"{measurement.StreamsCompleted}/{measurement.StreamsRequested}");
             Row(builder, "리다이렉트", $"{measurement.RedirectCount}회");
             Row(builder, "캐시 판정", measurement.CacheClassification);
             Row(builder, "최종 URL", measurement.FinalUrl);
@@ -181,24 +139,15 @@ internal static class LocalHtmlReportRenderer
             builder.Append("</table><p>");
             Html(builder, measurement.Message);
             builder.Append("</p><p class=\"small\"><strong>신뢰도 근거:</strong> ");
-            Html(
-                builder,
-                measurement.ConfidenceReasons.Count == 0
-                    ? "추가 근거 없음"
-                    : string.Join(" · ", measurement.ConfidenceReasons));
+            Html(builder, measurement.ConfidenceReasons.Count == 0 ? "추가 근거 없음" : string.Join(" · ", measurement.ConfidenceReasons));
             builder.Append("</p>");
-
             if (measurement.ResponseMetadata.Count > 0)
             {
                 builder.Append("<h3>응답 메타데이터</h3><table class=\"kv\">");
-                foreach ((string name, string value) in measurement.ResponseMetadata
-                             .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-                {
+                foreach ((string name, string value) in measurement.ResponseMetadata.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
                     Row(builder, name, value);
-                }
                 builder.Append("</table>");
             }
-
             if (measurement.Samples.Count > 0)
             {
                 builder.Append("<h3>처리량 샘플</h3><div class=\"samples\"><table><thead><tr><th>스트림</th><th>경과</th><th>구간 수신량</th><th>Mbps</th></tr></thead><tbody>");
@@ -216,22 +165,14 @@ internal static class LocalHtmlReportRenderer
                 }
                 builder.Append("</tbody></table></div>");
             }
-
             builder.Append("</article>");
         }
-
         builder.Append("</section>");
     }
 
-    private static void AppendLegacyMeasurementSection(
-        StringBuilder builder,
-        IReadOnlyList<ReportTextSection> measurements)
+    private static void AppendLegacyMeasurementSection(StringBuilder builder, IReadOnlyList<ReportTextSection> measurements)
     {
-        if (measurements.Count == 0)
-        {
-            return;
-        }
-
+        if (measurements.Count == 0) return;
         builder.Append("<section class=\"card\"><h2>화면 진단 문구</h2>");
         foreach (ReportTextSection section in measurements)
         {
@@ -246,28 +187,16 @@ internal static class LocalHtmlReportRenderer
         builder.Append("</section>");
     }
 
-    private static void AppendObservationSection(
-        StringBuilder builder,
-        ReportObservationSection? observation)
+    private static void AppendObservationSection(StringBuilder builder, ReportObservationSection? observation)
     {
-        if (observation is null)
-        {
-            return;
-        }
-
+        if (observation is null) return;
         builder.Append("<section class=\"card\"><h2>브라우저 다운로드 관찰</h2><table class=\"kv\">");
         Row(builder, "상태", observation.Status);
         Row(builder, "관찰 시간", Unit(observation.ObservedSeconds, "초"));
         Row(builder, "백그라운드 기준", Unit(observation.BaselineReceiveMbps, "Mbps"));
-        Row(
-            builder,
-            "평균 / 최고",
-            $"{Unit(observation.AverageAdjustedReceiveMbps, "Mbps")} / {Unit(observation.PeakAdjustedReceiveMbps, "Mbps")}");
+        Row(builder, "평균 / 최고", $"{Unit(observation.AverageAdjustedReceiveMbps, "Mbps")} / {Unit(observation.PeakAdjustedReceiveMbps, "Mbps")}");
         Row(builder, "수신량", FormatBytes(observation.TotalReceiveBytes));
-        Row(
-            builder,
-            "일시 정지 / 급락",
-            $"{Number(observation.PauseCount, "0")} / {Number(observation.SuddenDropCount, "0")}");
+        Row(builder, "일시 정지 / 급락", $"{Number(observation.PauseCount, "0")} / {Number(observation.SuddenDropCount, "0")}");
         Row(builder, "BSSID 변경", Number(observation.BssidChangeCount, "0"));
         Row(builder, "인터페이스 변경", Number(observation.AdapterChangeCount, "0"));
         Row(builder, "카운터 재설정", Number(observation.CounterResetCount, "0"));
@@ -277,7 +206,6 @@ internal static class LocalHtmlReportRenderer
         builder.Append("</p><p class=\"small\">");
         Html(builder, observation.Limitation);
         builder.Append("</p>");
-
         if (observation.Samples.Count > 0)
         {
             builder.Append("<h3>시간축 샘플</h3><div class=\"samples\"><table><thead><tr><th>시각</th><th>구간</th><th>수신</th><th>RSSI</th><th>Rx 링크</th><th>이벤트</th></tr></thead><tbody>");
@@ -288,13 +216,7 @@ internal static class LocalHtmlReportRenderer
                 builder.Append("</td><td>");
                 Html(builder, sample.IsBaseline ? "기준" : "관찰");
                 builder.Append("</td><td>");
-                Html(
-                    builder,
-                    Unit(
-                        sample.IsBaseline
-                            ? sample.RawReceiveMbps
-                            : sample.AdjustedReceiveMbps,
-                        "Mbps"));
+                Html(builder, Unit(sample.IsBaseline ? sample.RawReceiveMbps : sample.AdjustedReceiveMbps, "Mbps"));
                 builder.Append("</td><td>");
                 Html(builder, Unit(sample.RssiDbm, "dBm"));
                 builder.Append("</td><td>");
@@ -305,39 +227,20 @@ internal static class LocalHtmlReportRenderer
             }
             builder.Append("</tbody></table></div>");
         }
-
         builder.Append("</section>");
     }
 
-    private static void AppendFindingSection(
-        StringBuilder builder,
-        IReadOnlyList<ReportFinding> findings)
+    private static void AppendFindingSection(StringBuilder builder, IReadOnlyList<ReportFinding> findings)
     {
         builder.Append("<section class=\"card\"><h2>판정</h2>");
-        if (findings.Count == 0)
-        {
-            builder.Append("<p>추가 판정 항목이 없습니다.</p>");
-        }
+        if (findings.Count == 0) builder.Append("<p>추가 판정 항목이 없습니다.</p>");
         else
         {
             foreach (ReportFinding finding in findings)
             {
-                string severityClass = finding.Severity.Equals(
-                    "Critical",
-                    StringComparison.OrdinalIgnoreCase)
-                    ? "critical"
-                    : finding.Severity.Equals(
-                        "Warning",
-                        StringComparison.OrdinalIgnoreCase)
-                        ? "warning"
-                        : "information";
-                string badgeClass = severityClass switch
-                {
-                    "critical" => "critical",
-                    "warning" => "warn",
-                    _ => "info"
-                };
-
+                string severityClass = finding.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase)
+                    ? "critical" : finding.Severity.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "information";
+                string badgeClass = severityClass switch { "critical" => "critical", "warning" => "warn", _ => "info" };
                 builder.Append("<article class=\"finding ");
                 Html(builder, severityClass);
                 builder.Append("\"><span class=\"badge ");
@@ -360,9 +263,7 @@ internal static class LocalHtmlReportRenderer
         builder.Append("</section>");
     }
 
-    private static void AppendLimitations(
-        StringBuilder builder,
-        IReadOnlyList<string> limitations)
+    private static void AppendLimitations(StringBuilder builder, IReadOnlyList<string> limitations)
     {
         builder.Append("<section class=\"card\"><h2>판단 한계</h2><ul>");
         foreach (string limitation in limitations)
@@ -373,11 +274,7 @@ internal static class LocalHtmlReportRenderer
         }
         builder.Append("</ul></section>");
     }
-
-    private static void Row(
-        StringBuilder builder,
-        string key,
-        string? value)
+    private static void Row(StringBuilder builder, string key, string? value)
     {
         builder.Append("<tr><th>");
         Html(builder, key);
@@ -385,105 +282,33 @@ internal static class LocalHtmlReportRenderer
         Html(builder, value ?? string.Empty);
         builder.Append("</td></tr>");
     }
-
-    private static void Html(StringBuilder builder, string? value) =>
-        builder.Append(WebUtility.HtmlEncode(value ?? string.Empty));
-
-    private static string LocalTime(DateTimeOffset value) =>
-        value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-
-    private static string Boolean(bool? value) =>
-        value switch
-        {
-            true => "사용",
-            false => "미사용",
-            null => "확인 불가"
-        };
-
-    private static string ConfidenceCss(string value) =>
-        value.Equals("High", StringComparison.OrdinalIgnoreCase)
-            ? "high"
-            : value.Equals("Medium", StringComparison.OrdinalIgnoreCase)
-                ? "medium"
-                : value.Equals("Low", StringComparison.OrdinalIgnoreCase)
-                    ? "low"
-                    : "info";
-
-    private static string Unit<T>(T? value, string unit)
-        where T : struct, IFormattable =>
-        value.HasValue
-            ? $"{value.Value.ToString(null, CultureInfo.InvariantCulture)} {unit}"
-            : "확인 불가";
-
-    private static string Number<T>(T? value, string fallback)
-        where T : struct, IFormattable =>
-        value.HasValue
-            ? value.Value.ToString(null, CultureInfo.InvariantCulture)
-            : fallback;
-
-    private static string FormatBytes(long? bytes)
-    {
-        if (!bytes.HasValue)
-        {
-            return "확인 불가";
-        }
-
-        return FormatBytes(bytes.Value);
-    }
-
+    private static void Html(StringBuilder builder, string? value) => builder.Append(WebUtility.HtmlEncode(value ?? string.Empty));
+    private static string LocalTime(DateTimeOffset value) => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+    private static string Boolean(bool? value) => value switch { true => "사용", false => "미사용", null => "확인 불가" };
+    private static string ConfidenceCss(string value) => value.Equals("High", StringComparison.OrdinalIgnoreCase) ? "high"
+        : value.Equals("Medium", StringComparison.OrdinalIgnoreCase) ? "medium"
+        : value.Equals("Low", StringComparison.OrdinalIgnoreCase) ? "low" : "info";
+    private static string Unit<T>(T? value, string unit) where T : struct, IFormattable =>
+        value.HasValue ? $"{value.Value.ToString(null, CultureInfo.InvariantCulture)} {unit}" : "확인 불가";
+    private static string Number<T>(T? value, string fallback) where T : struct, IFormattable =>
+        value.HasValue ? value.Value.ToString(null, CultureInfo.InvariantCulture) : fallback;
+    private static string FormatBytes(long? bytes) => bytes.HasValue ? FormatBytes(bytes.Value) : "확인 불가";
     private static string FormatBytes(long bytes)
     {
-        if (bytes >= 1024L * 1024 * 1024)
-        {
-            return $"{bytes / 1024d / 1024 / 1024:F2} GiB";
-        }
-
-        if (bytes >= 1024L * 1024)
-        {
-            return $"{bytes / 1024d / 1024:F2} MiB";
-        }
-
+        if (bytes >= 1024L * 1024 * 1024) return $"{bytes / 1024d / 1024 / 1024:F2} GiB";
+        if (bytes >= 1024L * 1024) return $"{bytes / 1024d / 1024:F2} MiB";
         return $"{bytes / 1024d:F2} KiB";
     }
-
     private static string SampleEvents(ReportObservationSample sample)
     {
         List<string> events = [];
-        if (sample.BssidChanged)
-        {
-            events.Add("BSSID 변경");
-        }
-
-        if (sample.AdapterChanged)
-        {
-            events.Add("인터페이스 변경");
-        }
-
-        if (sample.CounterReset)
-        {
-            events.Add("카운터 재설정");
-        }
-
-        if (sample.WlanDisconnected)
-        {
-            events.Add("WLAN 미연결");
-        }
-
-        if (sample.PauseDetected)
-        {
-            events.Add("일시 정지");
-        }
-
-        if (sample.SuddenDropDetected)
-        {
-            events.Add("급락");
-        }
-
-        if (!string.IsNullOrWhiteSpace(sample.Note))
-        {
-            events.Add(sample.Note);
-        }
-
+        if (sample.BssidChanged) events.Add("BSSID 변경");
+        if (sample.AdapterChanged) events.Add("인터페이스 변경");
+        if (sample.CounterReset) events.Add("카운터 재설정");
+        if (sample.WlanDisconnected) events.Add("WLAN 미연결");
+        if (sample.PauseDetected) events.Add("일시 정지");
+        if (sample.SuddenDropDetected) events.Add("급락");
+        if (!string.IsNullOrWhiteSpace(sample.Note)) events.Add(sample.Note);
         return events.Count == 0 ? "-" : string.Join(", ", events);
     }
 }
