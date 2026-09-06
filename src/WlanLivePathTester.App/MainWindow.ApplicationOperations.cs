@@ -36,7 +36,6 @@ public partial class MainWindow
             rejectionMessage = string.Empty;
             return true;
         }
-
         rejectionMessage = start.Status switch
         {
             ApplicationOperationStartStatus.ShutdownPending =>
@@ -62,10 +61,7 @@ public partial class MainWindow
     {
         Dispatcher.VerifyAccess();
         TabControl? tabs = FindVisualDescendant<TabControl>(this);
-        // A constructed but not yet shown Window can own initialized content
-        // without having its content presenter in the Window visual tree.
-        // Resolve the same tab host from that content; never invent a host or
-        // bypass the selected/enabled-tab and shared-lease checks below.
+        // Initialized Window.Content may exist before its presentation source.
         if (tabs is null && Content is DependencyObject contentRoot)
         {
             tabs = contentRoot as TabControl
@@ -77,7 +73,6 @@ public partial class MainWindow
             ShowApplicationOperationBlocked("현재 화면에서는 새 작업을 시작할 수 없습니다.");
             return null;
         }
-
         // Compatibility guard for feature handlers not yet migrated to leases.
         if (_measurementRunning || _observationCancellation is not null
             || _routeComparisonCancellationV3 is not null
@@ -88,7 +83,6 @@ public partial class MainWindow
                 "측정·관찰·경로 작업 또는 보고서 저장이 진행 중입니다. 완료하거나 중지한 뒤 다시 실행하십시오.");
             return null;
         }
-
         ApplicationOperationUiLease? lease = _applicationOperationUi.TryBegin(
             kind, tabs, requestCancellation, out ApplicationOperationStartStatus status);
         if (lease is null)
@@ -119,7 +113,6 @@ public partial class MainWindow
         // Route import/report features already have their own deferred-close
         // handler. Do not start a competing Close continuation for their lease.
         if (!session.HasActiveUiLease) return;
-
         e.Cancel = true;
         _applicationOperationClosePending = true;
         ShowApplicationOperationBlocked(
@@ -128,6 +121,11 @@ public partial class MainWindow
         {
             await session.RequestShutdownAsync();
             _applicationOperationClosePending = false;
+            if (KeepWindowOpenForLocalReportReview())
+            {
+                session.CancelShutdownRequest();
+                return;
+            }
             if (!_applicationOperationWindowClosed
                 && !Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
             {
