@@ -23,26 +23,21 @@ public partial class MainWindow
 
     internal void EnsureObservationPowerTransitionMonitor()
     {
+        if (_applicationOperationWindowClosed) return;
         EnsureObservationPowerClosedHook();
-        if (_observationPowerMessageHooked)
-        {
-            return;
-        }
-
+        if (_observationPowerMessageHooked) return;
         nint handle = new WindowInteropHelper(this).Handle;
         if (handle == nint.Zero)
         {
             EnsureObservationPowerSourceInitializedHook();
             return;
         }
-
         HwndSource? source = HwndSource.FromHwnd(handle);
         if (source is null)
         {
             EnsureObservationPowerSourceInitializedHook();
             return;
         }
-
         source.AddHook(ObservationPowerWindowMessageHook);
         _observationPowerMessageSource = source;
         _observationPowerMessageHooked = true;
@@ -51,151 +46,90 @@ public partial class MainWindow
 
     private void EnsureObservationPowerClosedHook()
     {
-        if (_observationPowerClosedHooked)
-        {
-            return;
-        }
-
+        if (_observationPowerClosedHooked) return;
         Closed += OnObservationPowerMonitorWindowClosed;
         _observationPowerClosedHooked = true;
     }
 
     private void EnsureObservationPowerSourceInitializedHook()
     {
-        if (_observationPowerSourceEventHooked)
-        {
-            return;
-        }
-
+        if (_observationPowerSourceEventHooked) return;
         SourceInitialized += OnObservationPowerSourceInitialized;
         _observationPowerSourceEventHooked = true;
     }
 
     private void RemoveObservationPowerSourceInitializedHook()
     {
-        if (!_observationPowerSourceEventHooked)
-        {
-            return;
-        }
-
+        if (!_observationPowerSourceEventHooked) return;
         SourceInitialized -= OnObservationPowerSourceInitialized;
         _observationPowerSourceEventHooked = false;
     }
 
-    private void OnObservationPowerSourceInitialized(
-        object? sender,
-        EventArgs e) =>
+    private void OnObservationPowerSourceInitialized(object? sender, EventArgs e) =>
         EnsureObservationPowerTransitionMonitor();
 
     private nint ObservationPowerWindowMessageHook(
-        nint hwnd,
-        int message,
-        nint wParam,
-        nint lParam,
-        ref bool handled)
+        nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (message != WmPowerBroadcast)
-        {
-            return nint.Zero;
-        }
-
+        if (message != WmPowerBroadcast) return nint.Zero;
         ObservationPowerTransition? transition = wParam.ToInt64() switch
         {
             PbtApmSuspend => ObservationPowerTransition.Suspend,
-            PbtApmResumeCritical
-                or PbtApmResumeSuspend
-                or PbtApmResumeAutomatic =>
-                ObservationPowerTransition.Resume,
-            PbtApmPowerStatusChange =>
-                ObservationPowerTransition.PowerStatusChanged,
+            PbtApmResumeCritical or PbtApmResumeSuspend or PbtApmResumeAutomatic => ObservationPowerTransition.Resume,
+            PbtApmPowerStatusChange => ObservationPowerTransition.PowerStatusChanged,
             _ => null
         };
-
-        if (transition.HasValue)
-        {
-            HandleObservationPowerTransition(transition.Value);
-        }
-
+        if (transition.HasValue) HandleObservationPowerTransition(transition.Value);
         return nint.Zero;
     }
 
-    private void HandleObservationPowerTransition(
-        ObservationPowerTransition transition)
+    private void HandleObservationPowerTransition(ObservationPowerTransition transition)
     {
-        ObservationPowerTransitionDecision decision =
-            _observationPowerTransitionState.Handle(transition);
+        if (_applicationOperationWindowClosed) return;
+        if (transition == ObservationPowerTransition.Suspend)
+            HandleLocalDiagnosticPowerTransition(suspended: true);
+        else if (transition == ObservationPowerTransition.Resume)
+            HandleLocalDiagnosticPowerTransition(suspended: false);
 
-        if (transition == ObservationPowerTransition.Suspend
-            && decision.ShouldCancelObservation)
+        ObservationPowerTransitionDecision decision = _observationPowerTransitionState.Handle(transition);
+        if (transition == ObservationPowerTransition.Suspend && decision.ShouldCancelObservation)
         {
+            // Preserve the existing observation-specific SystemSuspend reason;
+            // the generic diagnostic cancellation must not relabel observation.
             _observationCancellationContext.RequestSystemSuspend();
-            try
-            {
-                _observationCancellation?.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-                // The observation completed while Windows dispatched suspend.
-            }
-
+            try { _observationCancellation?.Cancel(); }
+            catch (ObjectDisposedException) { }
             SetObservationResult(
                 "시스템 절전 또는 최대 절전 전환을 감지했습니다. 전원 전환 전후의 Wi-Fi 카운터를 결합하지 않도록 현재 관찰을 중단하고 있습니다.");
             return;
         }
-
-        if (transition == ObservationPowerTransition.Resume
-            && decision.ShouldReevaluateAdapters)
-        {
+        if (transition == ObservationPowerTransition.Resume && decision.ShouldReevaluateAdapters)
             QueueAdapterRefreshAfterPowerResume();
-        }
     }
 
     private void QueueAdapterRefreshAfterPowerResume()
     {
-        if (Dispatcher.HasShutdownStarted
-            || Dispatcher.HasShutdownFinished)
-        {
-            return;
-        }
-
-        _ = Dispatcher.BeginInvoke(
-            DispatcherPriority.Background,
+        if (_applicationOperationWindowClosed || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Background,
             () => TryRefreshAdaptersAfterPowerResume());
     }
 
     private void TryRefreshAdaptersAfterPowerResume()
     {
-        if (_measurementRunning
-            || _observationCancellation is not null)
-        {
-            return;
-        }
-
-        if (!_observationPowerTransitionState
-            .TryMarkAdaptersReevaluated())
-        {
-            return;
-        }
-
+        if (_applicationOperationWindowClosed) return;
+        if (!_observationPowerTransitionState.TryMarkAdaptersReevaluated()) return;
+        // Transfer the observation power-state request to the durable shared
+        // pending queue, even if another operation still owns the lease.
+        // Consuming the power flag here does not mean an inventory was read.
         RefreshNetworkAdapterDiagnostics();
     }
 
-    private void OnObservationPowerMonitorWindowClosed(
-        object? sender,
-        EventArgs e)
+    private void OnObservationPowerMonitorWindowClosed(object? sender, EventArgs e)
     {
         if (_observationPowerMessageSource is not null)
-        {
-            _observationPowerMessageSource.RemoveHook(
-                ObservationPowerWindowMessageHook);
-        }
-
+            _observationPowerMessageSource.RemoveHook(ObservationPowerWindowMessageHook);
         RemoveObservationPowerSourceInitializedHook();
-        if (_observationPowerClosedHooked)
-        {
-            Closed -= OnObservationPowerMonitorWindowClosed;
-        }
-
+        if (_observationPowerClosedHooked) Closed -= OnObservationPowerMonitorWindowClosed;
         _observationPowerMessageSource = null;
         _observationPowerMessageHooked = false;
         _observationPowerClosedHooked = false;
