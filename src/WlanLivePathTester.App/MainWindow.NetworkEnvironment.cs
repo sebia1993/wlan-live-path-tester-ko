@@ -3,9 +3,12 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using WlanLivePathTester.Core.NetworkEnvironment;
+using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Windows.NetworkEnvironment;
 
 namespace WlanLivePathTester.App;
+
+internal sealed record LocalDiagnosticText(string Text, bool IsWarning = false, bool IsError = false);
 
 public partial class MainWindow
 {
@@ -13,23 +16,17 @@ public partial class MainWindow
     private TextBlock? _networkEnvironmentResultText;
     private bool _networkEnvironmentTabAdded;
 
+    internal Func<CancellationToken, Task<LocalDiagnosticText>> CollectNetworkEnvironment { get; set; } =
+        CollectNetworkEnvironmentAsync;
+
     internal void EnsureNetworkEnvironmentTab()
     {
-        if (_networkEnvironmentTabAdded)
-        {
-            return;
-        }
-
-        TabControl? tabControl = FindVisualDescendant<TabControl>(this);
-        if (tabControl is null)
-        {
-            return;
-        }
-
-        tabControl.Items.Insert(
-            Math.Min(1, tabControl.Items.Count),
-            CreateNetworkEnvironmentTab());
+        if (_networkEnvironmentTabAdded || _applicationOperationWindowClosed) return;
+        TabControl? tabControl = FindApplicationTabControl();
+        if (tabControl is null) return;
+        tabControl.Items.Insert(Math.Min(1, tabControl.Items.Count), CreateNetworkEnvironmentTab());
         _networkEnvironmentTabAdded = true;
+        Closed += OnNetworkEnvironmentClosed;
     }
 
     private TabItem CreateNetworkEnvironmentTab()
@@ -41,16 +38,13 @@ public partial class MainWindow
             Padding = new Thickness(12, 8, 12, 8),
             HorizontalAlignment = HorizontalAlignment.Left
         };
-        _readNetworkEnvironmentButton.Click +=
-            OnReadNetworkEnvironmentClick;
-
+        _readNetworkEnvironmentButton.Click += OnReadNetworkEnvironmentClick;
         _networkEnvironmentResultText = new TextBlock
         {
             FontFamily = new FontFamily("Consolas"),
             TextWrapping = TextWrapping.Wrap,
             Text = "아직 로컬 인터페이스 환경을 확인하지 않았습니다."
         };
-
         StackPanel content = new();
         content.Children.Add(new TextBlock
         {
@@ -93,10 +87,7 @@ public partial class MainWindow
                 Text = "기본 게이트웨이가 여러 개이거나 VPN이 활성화됐다는 사실만으로 실제 경로를 확정할 수는 없습니다. 필요하면 route print 또는 Get-NetRoute 결과와 비교하십시오."
             }
         });
-        content.Children.Add(new Border
-        {
-            Height = 14
-        });
+        content.Children.Add(new Border { Height = 14 });
         content.Children.Add(_readNetworkEnvironmentButton);
         content.Children.Add(new Border
         {
@@ -108,66 +99,47 @@ public partial class MainWindow
             BorderThickness = new Thickness(1),
             Child = _networkEnvironmentResultText
         });
-
         return new TabItem
         {
             Header = "인터페이스 환경",
             Content = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Content = new Border
-                {
-                    Padding = new Thickness(20),
-                    Child = content
-                }
+                Content = new Border { Padding = new Thickness(20), Child = content }
             }
         };
     }
 
-    private async void OnReadNetworkEnvironmentClick(
-        object sender,
-        RoutedEventArgs e)
+    private async void OnReadNetworkEnvironmentClick(object sender, RoutedEventArgs e) =>
+        await RunNetworkEnvironmentAsync();
+
+    internal Task<bool> RunNetworkEnvironmentAsync()
     {
-        if (_readNetworkEnvironmentButton is null
-            || !_readNetworkEnvironmentButton.IsEnabled)
-        {
-            return;
-        }
-
-        _readNetworkEnvironmentButton.IsEnabled = false;
-        SetNetworkEnvironmentResult(
-            "로컬 인터페이스 정보를 읽고 있습니다.",
-            Brushes.DarkSlateGray);
-
-        try
-        {
-            LocalNetworkEnvironmentSnapshot snapshot = await Task.Run(
-                LocalNetworkEnvironmentReader.ReadCurrent);
-            NetworkEnvironmentSeverity highestSeverity =
-                snapshot.Assessment.Findings.Any(finding =>
-                    finding.Severity == NetworkEnvironmentSeverity.Warning)
-                    ? NetworkEnvironmentSeverity.Warning
-                    : NetworkEnvironmentSeverity.Information;
-            SetNetworkEnvironmentResult(
-                FormatNetworkEnvironment(snapshot),
-                highestSeverity == NetworkEnvironmentSeverity.Warning
-                    ? Brushes.DarkOrange
-                    : Brushes.DarkGreen);
-        }
-        catch (Exception exception)
-        {
-            SetNetworkEnvironmentResult(
-                $"로컬 인터페이스 환경 확인 중 오류가 발생했습니다: {exception.Message}",
-                Brushes.DarkRed);
-        }
-        finally
-        {
-            _readNetworkEnvironmentButton.IsEnabled = true;
-        }
+        Dispatcher.VerifyAccess();
+        if (_applicationOperationWindowClosed || !_networkEnvironmentTabAdded
+            || _readNetworkEnvironmentButton is null || _networkEnvironmentResultText is null)
+            return Task.FromResult(false);
+        Func<CancellationToken, Task<LocalDiagnosticText>> collect = CollectNetworkEnvironment;
+        return RunLocalDiagnosticAsync(
+            ApplicationOperationKind.NetworkEnvironmentCapture,
+            collect,
+            result => SetNetworkEnvironmentResult(result.Text,
+                result.IsError ? Brushes.DarkRed : result.IsWarning ? Brushes.DarkOrange : Brushes.DarkGreen),
+            busy => _readNetworkEnvironmentButton.IsEnabled = !busy,
+            SetNetworkEnvironmentResult);
     }
 
-    private static string FormatNetworkEnvironment(
-        LocalNetworkEnvironmentSnapshot snapshot)
+    private static Task<LocalDiagnosticText> CollectNetworkEnvironmentAsync(CancellationToken token) =>
+        Task.Run(() =>
+        {
+            token.ThrowIfCancellationRequested();
+            LocalNetworkEnvironmentSnapshot snapshot = LocalNetworkEnvironmentReader.ReadCurrent();
+            token.ThrowIfCancellationRequested();
+            return new LocalDiagnosticText(FormatNetworkEnvironment(snapshot),
+                snapshot.Assessment.Findings.Any(finding => finding.Severity == NetworkEnvironmentSeverity.Warning));
+        }, token);
+
+    private static string FormatNetworkEnvironment(LocalNetworkEnvironmentSnapshot snapshot)
     {
         NetworkEnvironmentAssessment assessment = snapshot.Assessment;
         StringBuilder builder = new();
@@ -180,7 +152,6 @@ public partial class MainWindow
         builder.AppendLine($"활성 기본 게이트웨이 보유 인터페이스: {assessment.ActiveDefaultGatewayCount}");
         builder.AppendLine($"경로 선택 혼재 가능성: {(assessment.RouteSelectionMayBeAmbiguous ? "있음" : "낮음")}");
         builder.AppendLine($"단일 물리 Wi-Fi 후보: {assessment.PreferredWirelessDisplayName ?? "확정하지 못함"}");
-
         builder.AppendLine();
         builder.AppendLine("[판정]");
         foreach (NetworkEnvironmentFinding finding in assessment.Findings)
@@ -190,7 +161,6 @@ public partial class MainWindow
             builder.AppendLine($"  해석: {finding.Interpretation}");
             builder.AppendLine($"  다음 확인: {finding.NextStep}");
         }
-
         builder.AppendLine();
         builder.AppendLine("[인터페이스 목록]");
         LocalNetworkAdapterSnapshot[] ordered = snapshot.Adapters
@@ -199,7 +169,6 @@ public partial class MainWindow
             .ThenBy(adapter => adapter.Category)
             .ThenBy(adapter => adapter.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-
         for (int index = 0; index < ordered.Length; index++)
         {
             LocalNetworkAdapterSnapshot adapter = ordered[index];
@@ -209,67 +178,46 @@ public partial class MainWindow
             builder.AppendLine($"   링크 속도: {FormatNetworkSpeed(adapter.SpeedBitsPerSecond)} / 기본 게이트웨이: {(adapter.HasDefaultGateway ? $"있음({adapter.GatewayCount})" : "없음")}");
             builder.AppendLine($"   주소 계열: IPv4 {(adapter.HasIpv4 ? "있음" : "없음")}, IPv6 {(adapter.HasIpv6 ? "있음" : "없음")} / 주소 개수: {adapter.UnicastAddressCount}");
             builder.AppendLine($"   분류: {(adapter.IsVpn ? "VPN/터널 " : string.Empty)}{(adapter.IsVirtual ? "가상" : "물리 후보")}");
-            if (!string.IsNullOrWhiteSpace(adapter.ReadError))
-            {
-                builder.AppendLine($"   부분 제한: {adapter.ReadError}");
-            }
+            if (!string.IsNullOrWhiteSpace(adapter.ReadError)) builder.AppendLine($"   부분 제한: {adapter.ReadError}");
         }
-
         return builder.ToString().TrimEnd();
     }
 
-    private static string FormatNetworkSeverity(
-        NetworkEnvironmentSeverity severity) =>
-        severity == NetworkEnvironmentSeverity.Warning
-            ? "[주의]"
-            : "[정보]";
-
-    private static string FormatNetworkCategory(
-        NetworkAdapterCategory category) =>
-        category switch
-        {
-            NetworkAdapterCategory.Wireless => "Wi-Fi",
-            NetworkAdapterCategory.Ethernet => "유선",
-            NetworkAdapterCategory.Tunnel => "터널",
-            NetworkAdapterCategory.Loopback => "루프백",
-            _ => "기타"
-        };
-
-    private static string FormatNetworkState(
-        NetworkAdapterOperationalState state) =>
-        state switch
-        {
-            NetworkAdapterOperationalState.Up => "Up",
-            NetworkAdapterOperationalState.Down => "Down",
-            NetworkAdapterOperationalState.Dormant => "Dormant",
-            NetworkAdapterOperationalState.LowerLayerDown => "LowerLayerDown",
-            NetworkAdapterOperationalState.Testing => "Testing",
-            _ => "Unknown"
-        };
-
+    private static string FormatNetworkSeverity(NetworkEnvironmentSeverity severity) =>
+        severity == NetworkEnvironmentSeverity.Warning ? "[주의]" : "[정보]";
+    private static string FormatNetworkCategory(NetworkAdapterCategory category) => category switch
+    {
+        NetworkAdapterCategory.Wireless => "Wi-Fi",
+        NetworkAdapterCategory.Ethernet => "유선",
+        NetworkAdapterCategory.Tunnel => "터널",
+        NetworkAdapterCategory.Loopback => "루프백",
+        _ => "기타"
+    };
+    private static string FormatNetworkState(NetworkAdapterOperationalState state) => state switch
+    {
+        NetworkAdapterOperationalState.Up => "Up",
+        NetworkAdapterOperationalState.Down => "Down",
+        NetworkAdapterOperationalState.Dormant => "Dormant",
+        NetworkAdapterOperationalState.LowerLayerDown => "LowerLayerDown",
+        NetworkAdapterOperationalState.Testing => "Testing",
+        _ => "Unknown"
+    };
     private static string FormatNetworkSpeed(long? bitsPerSecond)
     {
-        if (!bitsPerSecond.HasValue || bitsPerSecond.Value <= 0)
-        {
-            return "확인 불가";
-        }
-
+        if (!bitsPerSecond.HasValue || bitsPerSecond.Value <= 0) return "확인 불가";
         double mbps = bitsPerSecond.Value / 1_000_000d;
-        return mbps >= 1000
-            ? $"{mbps / 1000:F1} Gbps"
-            : $"{mbps:F0} Mbps";
+        return mbps >= 1000 ? $"{mbps / 1000:F1} Gbps" : $"{mbps:F0} Mbps";
     }
-
-    private void SetNetworkEnvironmentResult(
-        string text,
-        Brush brush)
+    private void SetNetworkEnvironmentResult(string text, Brush brush)
     {
-        if (_networkEnvironmentResultText is null)
-        {
-            return;
-        }
-
+        if (_networkEnvironmentResultText is null || _applicationOperationWindowClosed) return;
         _networkEnvironmentResultText.Text = text;
         _networkEnvironmentResultText.Foreground = brush;
+    }
+    private void OnNetworkEnvironmentClosed(object? sender, EventArgs e)
+    {
+        if (_readNetworkEnvironmentButton is not null)
+            _readNetworkEnvironmentButton.Click -= OnReadNetworkEnvironmentClick;
+        Closed -= OnNetworkEnvironmentClosed;
     }
 }
