@@ -11,9 +11,8 @@ public partial class MainWindow
     private bool _localDiagnosticSystemSuspended;
     private bool _localDiagnosticInterruptedBySuspend;
 
-    // Return value means that the operation acquired the lease, not that the
-    // read succeeded. Automatic refresh uses this distinction to avoid retries
-    // on a native error and to retain requests rejected before any read.
+    // True means a lease was acquired, not that collection succeeded. Automatic
+    // refresh uses this to distinguish a rejected attempt from a native error.
     internal async Task<bool> RunLocalDiagnosticAsync<T>(
         ApplicationOperationKind kind,
         Func<CancellationToken, Task<T>> collect,
@@ -30,7 +29,10 @@ public partial class MainWindow
         ArgumentNullException.ThrowIfNull(setStatus);
         if (kind is not (ApplicationOperationKind.RouteEvidence
             or ApplicationOperationKind.NetworkAdapterDiagnostics
-            or ApplicationOperationKind.NetworkEnvironmentCapture))
+            or ApplicationOperationKind.NetworkEnvironmentCapture
+            or ApplicationOperationKind.RouteComparison
+            or ApplicationOperationKind.WindowsProxyImport
+            or ApplicationOperationKind.ProxyRouteResolution))
             throw new ArgumentOutOfRangeException(nameof(kind));
         if (automatic && kind != ApplicationOperationKind.NetworkAdapterDiagnostics)
             throw new ArgumentException("AUTOMATIC_DIAGNOSTIC_KIND_INVALID", nameof(kind));
@@ -55,7 +57,6 @@ public partial class MainWindow
             if (!automatic) setStatus(MeasurementStatusText.Text, Brushes.DarkOrange);
             return false;
         }
-
         _localDiagnosticUiLease = lease;
         _localDiagnosticInterruptedBySuspend = false;
         try
@@ -65,12 +66,10 @@ public partial class MainWindow
             deadline.CancelAfter(timeout);
             combined.Token.ThrowIfCancellationRequested();
             T result = await collect(combined.Token);
-            // Cancellation/deadline/suspend can occur while a synchronous
-            // Windows reader ignores its token. Await real completion, but do
-            // not apply that late snapshot as a fresh successful result.
+            // Never abandon a native call that ignores cancellation. After its
+            // actual return, exclude a snapshot made obsolete by cancellation.
             combined.Token.ThrowIfCancellationRequested();
-            if (lease.IsCurrent && !_applicationOperationWindowClosed
-                && !_localDiagnosticSystemSuspended)
+            if (lease.IsCurrent && !_applicationOperationWindowClosed && !_localDiagnosticSystemSuspended)
                 apply(result);
         }
         catch (OperationCanceledException) when (combined.IsCancellationRequested)
@@ -92,14 +91,14 @@ public partial class MainWindow
         }
         finally
         {
-            // UI cleanup precedes the using declaration's UI/Core lease
-            // release, including failure or cancellation of the read.
             try { if (!_applicationOperationWindowClosed) setBusy(false); }
             finally
             {
                 if (ReferenceEquals(_localDiagnosticUiLease, lease)) _localDiagnosticUiLease = null;
                 _localDiagnosticInterruptedBySuspend = false;
             }
+            // The using declarations restore peer bindings and release the
+            // lease before disposing the linked cancellation sources.
         }
         return true;
     }
@@ -107,8 +106,7 @@ public partial class MainWindow
     private ApplicationOperationCancellationStatus CancelLocalDiagnostic(ApplicationOperationKind expectedKind)
     {
         Dispatcher.VerifyAccess();
-        if (_localDiagnosticUiLease is not { IsCurrent: true } lease
-            || CurrentApplicationOperation.Kind != expectedKind)
+        if (_localDiagnosticUiLease is not { IsCurrent: true } lease || CurrentApplicationOperation.Kind != expectedKind)
             return ApplicationOperationCancellationStatus.NotActive;
         return lease.RequestCancellation();
     }
@@ -127,10 +125,7 @@ public partial class MainWindow
                 lease.RequestCancellation();
             }
         }
-        else
-        {
-            _networkAdapterRefreshController?.Resume();
-        }
+        else _networkAdapterRefreshController?.Resume();
     }
 
     private TabControl? FindApplicationTabControl()
@@ -138,7 +133,6 @@ public partial class MainWindow
         Dispatcher.VerifyAccess();
         TabControl? host = FindVisualDescendant<TabControl>(this);
         return host ?? (Content is DependencyObject content
-            ? content as TabControl ?? FindVisualDescendant<TabControl>(content)
-            : null);
+            ? content as TabControl ?? FindVisualDescendant<TabControl>(content) : null);
     }
 }
