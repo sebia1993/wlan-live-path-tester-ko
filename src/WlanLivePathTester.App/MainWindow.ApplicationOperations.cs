@@ -96,7 +96,7 @@ public partial class MainWindow
         catch (Exception)
         {
             session.CancelShutdownRequest();
-            ShowApplicationOperationBlocked("作業 종료 처리를 완료하지 못했습니다. 현재 작업 상태를 확인한 뒤 다시 닫으십시오.".Replace("作業", "작업"));
+            ShowApplicationOperationBlocked("작업 종료 처리를 완료하지 못했습니다. 현재 작업 상태를 확인한 뒤 다시 닫으십시오.");
         }
         finally
         {
