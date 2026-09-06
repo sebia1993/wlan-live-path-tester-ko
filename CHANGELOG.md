@@ -6,11 +6,15 @@
 
 ### Added
 
+- 수동/불러온 판정 경로 비교·Windows 프록시 가져오기를 같은 진단 UI 수명에 연결
+- 기본 WLAN·로컬 프록시 설정·WLAN NIC 대응의 중앙 실행권과 취소/종료 후 결과 적용 검사
+- 실제 WPF 경로/import·보고서·기본 조회·재진입 종료·오류 격리의 RouteUiLifetimeSmoke 28개 그룹
+- `docs/CENTRAL_ROUTE_UI_LIFETIME.md`에 중앙 종료·판정 출처·저장 완료/취소·기존 writer 한계 기록
 - 라우팅 근거·어댑터 진단·인터페이스 환경 조회를 같은 UI/Core lease에서 실행하는 공통 진단 runner
 - 기본 750ms debounce와 보류 요청 합치기·전역 idle 재개·절전/종료 정리를 담당하는 DeferredNetworkRefreshController
 - 라우팅·반복·관찰·어댑터·인터페이스 전용 보고서의 공통 AuxiliaryReportSection과 DiagnosticReportSave 수명
 - 실제 WPF에서 세 진단·다섯 보고서·전역 종류 조합·1,000개 이벤트·취소/종료를 검증하는 OperationLifecycleSmoke 25개 그룹
-- `docs/DIAGNOSTIC_REFRESH_LIFECYCLE.md`에 적용 범위·협력적 제한 시간·저장 한계·남은 #16 이행 기록
+- `docs/DIAGNOSTIC_REFRESH_LIFECYCLE.md`에 적용 범위·협력적 제한 시간·저장 한계·당시 남은 #16 이행 기록
 - 기존 LocalDiagnosticReport에 optional 내부 DIRECT–프록시 경로 snapshot과 schema 1.2 지원
 - JSON·CSV·오프라인 HTML에 별도 완료 시각·프록시 출처·정확 비교·후보별 안전 증거 표시
 - 통합 보고서 저장을 같은 UI/Core coordinator의 DiagnosticReportSave에 연결
@@ -32,6 +36,12 @@
 
 ### Fixed
 
+- Core 실행권 획득 알림 안의 Close 재진입 및 동기 취소 완료 후 재귀 Close 경계
+- 최종 창 닫기 거부 뒤 shutdown 상태가 남아 새 실행을 막을 수 있는 경계
+- Windows 프록시 가져오기 중 외부 URL이 변경됐다 돌아와도 늦은 판정이 적용될 수 있는 경계
+- 단일 측정 중지 callback 실패를 취소 요청 성공 문구로 표시하던 문제
+- 경로 보고서의 이전 callback 실패가 다음 TryStart 이전 취소에 섞일 수 있는 경계
+- 잘못된 보고서 반환값을 표시하기 전에 이전 성공 export 경로가 바뀔 수 있는 경계
 - 자동 어댑터 갱신이 측정·관찰만 검사해 다른 진단/보고서 작업과 겹치거나 보류 요청이 재개되지 않는 경계
 - 라우팅 확인의 Closed 이벤트가 실행 중인 취소 토큰을 즉시 폐기하던 수명 경계
 - 취소·협력적 시간 제한·절전 뒤 늦게 반환된 로컬 진단값이 최신 성공 상태로 적용될 수 있는 경계
@@ -51,11 +61,16 @@
 
 ### Changed
 
+- 경로/import/report Core-only 실행권·독립 peer-tab dictionary·Closing continuation을 제거하고 한 중앙 입구/종료 처리 사용
+- 경로 보고서는 기존 ReportSaveSession/writer를 유지하고 실제 writer·비동기 취소 callback·CTS 정리 후 UI lease 반환
+- 경로 보고서의 이미 게시된 성공 파일세트는 뒤늦은 취소로 실패 처리하지 않음
+- 원래 동의·출처·동일 URL·5분 TTL 및 기존 안전 renderer/파일세트 복구 계약 유지
+- 고정 #16 기준은 최종 CI와 main 반영이 모두 확인된 뒤에만 17/20=85%로 계산
 - 로컬 동기 inventory 조회는 worker에서 수행하고 유효한 결과만 Dispatcher에서 적용
 - 자동 갱신의 직접 timer/관찰 버튼 이벤트 의존을 단일 보류 요청 controller로 대체
 - 라우팅 확인 중 대상·해석 목적·URL 가져오기 버튼 잠금, 취소는 현재 lease로 전달
 - 다섯 전용 보고서는 기존 writer와 고유 안내를 유지하며 UI·저장/열기·정리 코드만 공통화
-- 고정 개발 기준 #17의 병합을 확인해 기준선 80%로 갱신; 부분 이행인 #16에 완료 점수를 더하지 않음
+- #128 단계의 부분 이행에는 점수를 더하지 않고 #127 기준 80% 유지
 - 통합 보고서의 기존 9개 positional 생성자·Deconstruct 유지, 경로 없는 이전 JSON/CSV/HTML 호환
 - 경로 증거와 통합 보고서 생성 시각을 구분하고 동시 측정으로 오해하지 않도록 한계 명시
 - 통합 저장 실패 시 이전 성공 경로 유지, 예외 원문 대신 유형 표시, 실제 쓰기 완료 후 lease 반환
@@ -63,7 +78,6 @@
 - 반복 실행 시작 시 대상 배열·HEAD 옵션 스냅샷, 취소/오류 시 확보한 결과 및 미시작 대상 수 표시
 - 사용자 토큰 취소로 발생한 다운로드 `OperationCanceledException`을 일반 오류가 아닌 취소 완료로 표시
 - 탭 상태 복원을 Core lease 해제보다 먼저 수행해 늦은 정리가 새 작업을 해제하지 않도록 처리
-- 경로 비교·가져오기·보고서의 기존 수명 및 종료 처리는 단계적 이행 동안 유지
 
 ### Security
 
@@ -75,10 +89,10 @@
 
 ### Planned
 
-- Core-only 경로 비교·프록시 가져오기·전용 경로 비교 보고서의 공통 UI/Closing 이행과 나머지 조회 경계 점검
-- 공통 취소 실패 표시 및 legacy writer 파일세트 취소/복구 검토
-- 나머지 원문 입력 경계 감사, 문서/공개 릴리스 검증
+- 나머지 원문 parser·URL·설정 입력 경계 감사
+- 최종 운영 문서 패키징, 새 공개 Release 및 게시 후 파일/해시/태그 검증
 - `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반 비동기 WinHTTP 전송 계층
+- 기존 legacy 보고서의 파일세트 rollback/중간 취소는 현행 제한을 명시하고 별도 개선 검토
 - 목적지별 Windows route·interface metric을 개인정보 노출 없이 요약하는 로컬 경로 판정
 - Authenticode 인증서 확보 후 빌드 서명과 서명 검증
 - 실제 Windows 11·Aruba WLAN·회사 프록시 검증 결과 기반 호환성 수정

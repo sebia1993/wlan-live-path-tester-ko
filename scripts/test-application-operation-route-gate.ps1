@@ -1,160 +1,49 @@
 [CmdletBinding()]
 param()
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
 $root = Split-Path -Parent $PSScriptRoot
-$corePath = Join-Path $root `
-    'src\WlanLivePathTester.Core\Operations\ApplicationOperationCoordinator.cs'
-$helperPath = Join-Path $root `
-    'src\WlanLivePathTester.App\MainWindow.ApplicationOperations.cs'
-$routePath = Join-Path $root `
-    'src\WlanLivePathTester.App\MainWindow.RouteComparisonV3.cs'
-$importPath = Join-Path $root `
-    'src\WlanLivePathTester.App\MainWindow.RouteProxyImport.cs'
-
-function Assert-Condition {
-    param(
-        [Parameter(Mandatory = $true)]
-        [bool]$Condition,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Message
-    )
-
-    if (-not $Condition) {
-        throw $Message
-    }
+$app = Join-Path $root 'src\WlanLivePathTester.App'
+function Read-App([string]$Name) { Get-Content -LiteralPath (Join-Path $app $Name) -Raw -Encoding UTF8 }
+function Require([string]$Source, [string]$Text) {
+    if (-not $Source.Contains($Text)) { throw "Missing central operation contract: $Text" }
 }
-
-foreach ($path in @($corePath, $helperPath, $routePath, $importPath)) {
-    Assert-Condition `
-        -Condition (Test-Path -LiteralPath $path -PathType Leaf) `
-        -Message "Required operation gate file not found: $path"
+$central = Read-App 'MainWindow.ApplicationOperations.cs'
+$route = Read-App 'MainWindow.RouteOperation.cs'
+$diagnostic = Read-App 'MainWindow.LocalDiagnosticOperation.cs'
+$comparison = Read-App 'MainWindow.RouteComparisonV3.cs'
+$import = Read-App 'MainWindow.RouteProxyImport.cs'
+$report = Read-App 'MainWindow.RouteComparisonReportV2.cs'
+$adapter = Read-App 'ApplicationOperationUiSession.cs'
+$files = @(Get-ChildItem -LiteralPath $app -Filter '*.cs' -File)
+$joined = ($files | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+$owners = [regex]::Matches($joined, 'ApplicationOperationCoordinator\s+_applicationOperations\s*=\s*new\(\)').Count
+if ($owners -ne 1) { throw "Expected exactly one MainWindow coordinator owner, found $owners" }
+$closingHooks = [regex]::Matches($joined, '\bClosing\s*\+=').Count
+if ($closingHooks -ne 1) { throw "Expected one application Closing subscription, found $closingHooks" }
+foreach ($required in @('Closing += OnApplicationOperationClosing', 'Closing -= OnApplicationOperationClosing',
+    'session.Snapshot.IsBusy', 'await session.RequestShutdownAsync()', 'Dispatcher.InvokeAsync(',
+    'session.CancelShutdownRequest()', 'KeepWindowOpenForRouteReportReview()',
+    'KeepWindowOpenForLocalReportReview()', 'KeepWindowOpenForAuxiliaryReportReview()')) { Require $central $required }
+foreach ($required in @('RunLocalDiagnosticAsync(', 'ApplicationOperationKind.RouteComparison',
+    'ApplicationOperationKind.WindowsProxyImport', 'CancelLocalDiagnostic(kind)',
+    'SetRouteComparisonBusyV3(isBusy: busy)', 'UpdateRouteProxyImportControls()')) { Require $route $required }
+foreach ($required in @('using ApplicationOperationUiLease?', 'TryBeginUiApplicationOperation(',
+    'userCancellation.Cancel', 'combined.Token.ThrowIfCancellationRequested()', 'setBusy(false)')) { Require $diagnostic $required }
+foreach ($required in @('ApplicationOperationKind.RouteComparison', 'RunRouteUiOperationAsync(',
+    'ApplyRouteComparisonResult', '.RunManualDirectiveAsync(')) { Require $comparison $required }
+foreach ($required in @('ApplicationOperationKind.WindowsProxyImport', 'ApplicationOperationKind.RouteComparison',
+    'RunRouteUiOperationAsync', '_windowsRouteProxyImporter.ImportAsync(', '_routeComparisonCoordinatorV3.RunAsync(')) { Require $import $required }
+foreach ($required in @('ApplicationOperationKind.RouteComparisonReportSave', 'using ApplicationOperationUiLease?',
+    'TryBeginUiApplicationOperation(', '_routeReportSaveSession.TryStart(', 'lease.RequestCancellation()')) { Require $report $required }
+foreach ($required in @('lease.RestorePeerTabs()', 'lease.CoreLease.Dispose()', 'BindingOperations.SetBinding(')) { Require $adapter $required }
+if ($adapter.IndexOf('lease.RestorePeerTabs()') -gt $adapter.IndexOf('lease.CoreLease.Dispose()')) {
+    throw 'UI restoration must precede Core release.'
 }
-
-$core = Get-Content -LiteralPath $corePath -Raw
-$helper = Get-Content -LiteralPath $helperPath -Raw
-$route = Get-Content -LiteralPath $routePath -Raw
-$import = Get-Content -LiteralPath $importPath -Raw
-
-Assert-Condition `
-    -Condition ($core.Contains('public sealed class ApplicationOperationCoordinator')) `
-    -Message 'The Core application operation coordinator is missing.'
-Assert-Condition `
-    -Condition ($core.Contains('ApplicationOperationLease')) `
-    -Message 'The Core operation lease contract is missing.'
-Assert-Condition `
-    -Condition ($helper.Contains('ApplicationOperationCoordinator')) `
-    -Message 'MainWindow does not own the central application operation coordinator.'
-Assert-Condition `
-    -Condition ($helper.Contains('_routeComparisonOperationLeaseV3')) `
-    -Message 'The route-operation lease field is missing.'
-Assert-Condition `
-    -Condition ($helper.Contains('TryBeginApplicationOperation')) `
-    -Message 'The safe MainWindow operation acquisition helper is missing.'
-Assert-Condition `
-    -Condition ($helper.Contains('ShutdownPending')) `
-    -Message 'The acquisition helper must distinguish shutdown rejection.'
-
-$appRoot = Join-Path $root 'src\WlanLivePathTester.App'
-$coordinatorOwners = @(Get-ChildItem -LiteralPath $appRoot -File -Filter '*.cs' |
-    Where-Object {
-        (Get-Content -LiteralPath $_.FullName -Raw).Contains(
-            '_applicationOperations = new()')
-    })
-Assert-Condition `
-    -Condition ($coordinatorOwners.Count -eq 1) `
-    -Message "Exactly one MainWindow application coordinator owner is required. Actual: $($coordinatorOwners.Name -join ', ')"
-Assert-Condition `
-    -Condition ($coordinatorOwners[0].Name -ceq `
-        'MainWindow.ApplicationOperations.cs') `
-    -Message "Unexpected application coordinator owner: $($coordinatorOwners[0].Name)"
-
-Assert-Condition `
-    -Condition ($route.Contains('ApplicationOperationKind.RouteComparison')) `
-    -Message 'Manual route comparison is not registered as RouteComparison.'
-Assert-Condition `
-    -Condition ($route.Contains('TryBeginApplicationOperation(')) `
-    -Message 'Manual route comparison does not acquire the central operation lease.'
-Assert-Condition `
-    -Condition ($route.Contains('active.Cancel')) `
-    -Message 'Manual route comparison does not register its existing cancellation source.'
-Assert-Condition `
-    -Condition ($route.Contains('_routeComparisonOperationLeaseV3 = operationLease;')) `
-    -Message 'Manual route comparison does not retain the active operation lease.'
-Assert-Condition `
-    -Condition ($route.Contains('operationLease.RequestCancellation()')) `
-    -Message 'Manual route comparison cancel does not flow through the operation lease.'
-Assert-Condition `
-    -Condition ($route.Contains('operationLease.Dispose();')) `
-    -Message 'Manual route comparison does not release its operation lease.'
-
-$routeBusyReset = $route.IndexOf(
-    'SetRouteComparisonBusyV3(isBusy: false);',
-    [StringComparison]::Ordinal)
-$routeLeaseRelease = $route.IndexOf(
-    'operationLease.Dispose();',
-    [StringComparison]::Ordinal)
-Assert-Condition `
-    -Condition ($routeBusyReset -ge 0 `
-        -and $routeLeaseRelease -gt $routeBusyReset) `
-    -Message 'Manual route comparison must restore its UI state before releasing the global lease.'
-
-Assert-Condition `
-    -Condition ($import.Contains(
-        'ApplicationOperationKind.WindowsProxyImport')) `
-    -Message 'Windows proxy import is not registered as WindowsProxyImport.'
-Assert-Condition `
-    -Condition ($import.Contains(
-        'ApplicationOperationKind.RouteComparison')) `
-    -Message 'Imported Windows decision comparison is not registered as RouteComparison.'
-Assert-Condition `
-    -Condition ($import.Contains(
-        'ApplicationOperationKind operationKind')) `
-    -Message 'The shared route proxy UI runner does not receive a fixed operation kind.'
-Assert-Condition `
-    -Condition ($import.Contains('TryBeginApplicationOperation(')) `
-    -Message 'The route proxy UI runner does not acquire the central lease.'
-Assert-Condition `
-    -Condition ($import.Contains('_routeComparisonOperationLeaseV3 = operationLease;')) `
-    -Message 'The route proxy UI runner does not retain its active lease.'
-Assert-Condition `
-    -Condition ($import.Contains('operationLease.Dispose();')) `
-    -Message 'The route proxy UI runner does not release its lease.'
-Assert-Condition `
-    -Condition ($import.Contains(
-        '_routeComparisonOperationLeaseV3?.RequestCancellation()')) `
-    -Message 'Window close does not request route operation cancellation through the lease.'
-Assert-Condition `
-    -Condition ($import.Contains(
-        '&& _routeComparisonOperationLeaseV3 is null')) `
-    -Message 'Windows proxy import controls do not include the global lease in their idle state.'
-
-$importBusyReset = $import.IndexOf(
-    'SetRouteComparisonBusyV3(isBusy: false);',
-    [StringComparison]::Ordinal)
-$importLeaseRelease = $import.IndexOf(
-    'operationLease.Dispose();',
-    [StringComparison]::Ordinal)
-Assert-Condition `
-    -Condition ($importBusyReset -ge 0 `
-        -and $importLeaseRelease -gt $importBusyReset) `
-    -Message 'The route proxy UI runner must restore its UI state before releasing the global lease.'
-
-foreach ($source in @($route, $import)) {
-    Assert-Condition `
-        -Condition (-not $source.Contains(
-            'TryBeginApplicationOperation(internalTarget')) `
-        -Message 'User-supplied internal targets must never be used as operation identifiers.'
-    Assert-Condition `
-        -Condition (-not $source.Contains(
-            'TryBeginApplicationOperation(proxyDirective')) `
-        -Message 'Raw proxy directives must never be used as operation identifiers.'
+foreach ($retired in @('TryBeginApplicationOperation(', '_routeComparisonPeerTabStatesV3',
+    '_routeProxyPeerCollection', '_routeReportPeerStates', '_routeProxyOperationCompletion',
+    'OnRouteProxyImportClosing', 'OnRouteReportWindowClosing', 'FinishDeferredRouteReportCloseAsync')) {
+    if ($joined.Contains($retired)) { throw "Retired parallel route lifetime reintroduced: $retired" }
 }
-
-Write-Host 'Application operation route gate contract passed.' `
-    -ForegroundColor Green
-Write-Host 'Central owner: MainWindow.ApplicationOperations.cs'
-Write-Host 'Guarded operations: manual route comparison, Windows proxy import, imported decision comparison'
+Write-Host 'Central route/UI operation contract passed: one coordinator and one Closing owner.' -ForegroundColor Green
+Write-Host 'Runtime exclusion, binding restoration, cancellation and close are additionally exercised by WPF smoke tests.'

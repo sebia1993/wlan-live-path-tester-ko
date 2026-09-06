@@ -16,8 +16,7 @@ public partial class MainWindow
         Dispatcher.VerifyAccess();
         if (_networkAdapterRefreshController is not null || _networkAdapterChangeMonitorClosed) return;
         _networkAdapterRefreshController = new DeferredNetworkRefreshController(
-            Dispatcher,
-            CanRunDeferredNetworkAdapterRefresh,
+            Dispatcher, CanRunDeferredNetworkAdapterRefresh,
             () => RunNetworkAdapterDiagnosticsAsync(automatic: true),
             type => SetNetworkAdapterSelectionText(
                 $"자동 어댑터 갱신 오류: {type}. 수동 새로고침으로 다시 확인하십시오.", Brushes.DarkRed));
@@ -27,8 +26,7 @@ public partial class MainWindow
     internal void EnsureNetworkAdapterChangeMonitor()
     {
         Dispatcher.VerifyAccess();
-        if (_networkAdapterChangeMonitorStarted || _networkAdapterChangeMonitorClosed
-            || _applicationOperationWindowClosed) return;
+        if (_networkAdapterChangeMonitorStarted || _networkAdapterChangeMonitorClosed || _applicationOperationWindowClosed) return;
         try
         {
             NetworkChange.NetworkAddressChanged += OnNetworkAdapterAddressChanged;
@@ -50,40 +48,19 @@ public partial class MainWindow
         Dispatcher.VerifyAccess();
         ApplicationOperationSnapshot state = CurrentApplicationOperation;
         return !_applicationOperationWindowClosed && !_networkAdapterChangeMonitorClosed
-            && !_applicationOperationClosePending && !_routeProxyClosePending
-            && !_routeReportCloseRequested && !_localDiagnosticSystemSuspended
-            && _networkAdapterDiagnosticsTabAdded
-            && _networkAdapterSelectionText is not null
-            && _networkAdapterWarningText is not null
-            && _networkAdapterInventoryText is not null
+            && !_applicationOperationClosePending && !_localDiagnosticSystemSuspended
+            && _networkAdapterDiagnosticsTabAdded && _networkAdapterSelectionText is not null
+            && _networkAdapterWarningText is not null && _networkAdapterInventoryText is not null
             && !state.IsBusy && !state.ShutdownRequested
-            && !_measurementRunning && _observationCancellation is null
-            && _routeComparisonCancellationV3 is null
-            && _routeProxyOperationCompletion is not { Task.IsCompleted: false }
-            && !RouteReportSaveBusy
             && FindApplicationTabControl()?.SelectedItem is TabItem { IsEnabled: true };
     }
 
-    private void OnNetworkAdapterAddressChanged(object? sender, EventArgs e) =>
-        QueueNetworkAdapterRefresh();
-
-    private void OnNetworkAdapterAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
-        QueueNetworkAdapterRefresh();
-
-    private void QueueNetworkAdapterRefresh() =>
-        _networkAdapterRefreshController?.RequestRefresh();
-
-    private void OnOperationStateForAdapterRefreshChanged(
-        object? sender, ApplicationOperationStateChangedEventArgs e)
-    {
-        // Notifications can be posted from different threads and arrive out of
-        // order. The scheduler re-reads the current coordinator snapshot on the
-        // Dispatcher, never acts on this event's possibly stale snapshot.
+    private void OnNetworkAdapterAddressChanged(object? sender, EventArgs e) => QueueNetworkAdapterRefresh();
+    private void OnNetworkAdapterAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) => QueueNetworkAdapterRefresh();
+    private void QueueNetworkAdapterRefresh() => _networkAdapterRefreshController?.RequestRefresh();
+    private void OnOperationStateForAdapterRefreshChanged(object? sender, ApplicationOperationStateChangedEventArgs e) =>
         _networkAdapterRefreshController?.StateMayHaveChanged();
-    }
-
-    // All activation, network-event and power-resume paths enqueue here.
-    // They must not collect synchronously or silently switch an active NIC.
+    // State events may be stale; the dispatcher always re-reads the live snapshot.
     private void RefreshNetworkAdapterDiagnostics() => QueueNetworkAdapterRefresh();
 
     private void DisposeNetworkAdapterRefreshController()
