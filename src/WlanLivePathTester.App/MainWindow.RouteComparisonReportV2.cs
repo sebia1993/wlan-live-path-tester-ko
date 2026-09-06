@@ -137,12 +137,14 @@ public partial class MainWindow
         }
         _routeReportUiLease = lease;
         _routeReportReviewAfterClose = false;
+        bool sessionStarted = false;
         try
         {
             SetRouteReportSaveBusy(true);
             if (Volatile.Read(ref cancellationRequested) != 0) throw new OperationCanceledException();
             if (!_routeReportSaveSession.TryStart(save, out Task<RouteReportSaveOutput>? completion))
                 throw new InvalidOperationException("REPORT_SESSION_UNAVAILABLE");
+            sessionStarted = true;
             if (Volatile.Read(ref cancellationRequested) != 0) _routeReportSaveSession.RequestCancellation();
             SetRouteComparisonReportResultV2("로컬 보고서를 생성하고 있습니다. 취소와 창 닫기는 파일 정리가 끝날 때까지 기다립니다.", Brushes.DarkSlateGray);
             // Includes the writer, async cancellation callbacks and CTS disposal.
@@ -150,10 +152,9 @@ public partial class MainWindow
             RouteReportSaveOutput saved = await completion;
             if (_applicationOperationWindowClosed || !lease.IsCurrent) return false;
             ArgumentNullException.ThrowIfNull(saved);
+            ArgumentNullException.ThrowIfNull(saved.Document);
+            ArgumentNullException.ThrowIfNull(saved.Export);
             var export = saved.Export;
-            _latestRouteComparisonReportDirectoryV2 = export.OutputDirectory;
-            _latestRouteComparisonReportHtmlV2 = export.HtmlPath;
-            if (export.CleanupIncomplete && _applicationOperationClosePending) _routeReportReviewAfterClose = true;
             StringBuilder message = new();
             message.AppendLine(export.CleanupIncomplete ? "저장 완료 · 임시 파일 정리 확인 필요" : "경로 비교 보고서 저장 완료");
             message.AppendLine($"실행: {saved.Document.RouteComparison.RunStatus}");
@@ -164,6 +165,10 @@ public partial class MainWindow
             message.AppendLine($"HTML: {Path.GetFileName(export.HtmlPath)}");
             message.AppendLine($"SHA-256: {Path.GetFileName(export.Sha256Path)}");
             message.AppendLine("전체 사용자 경로와 원본 입력은 표시하지 않았습니다.");
+            // Validate and format before replacing the last successful paths.
+            _latestRouteComparisonReportDirectoryV2 = export.OutputDirectory;
+            _latestRouteComparisonReportHtmlV2 = export.HtmlPath;
+            if (export.CleanupIncomplete && _applicationOperationClosePending) _routeReportReviewAfterClose = true;
             SetRouteComparisonReportResultV2(message.ToString().TrimEnd(), export.CleanupIncomplete ? Brushes.DarkOrange : Brushes.DarkGreen);
             return true;
         }
@@ -186,7 +191,9 @@ public partial class MainWindow
         }
         finally
         {
-            if (_routeReportSaveSession.CancellationCallbackFailed)
+            // A cancellation before TryStart must not inherit the preceding
+            // save's callback-failure flag. TryStart resets that flag for its run.
+            if (sessionStarted && _routeReportSaveSession.CancellationCallbackFailed)
             {
                 _routeReportReviewAfterClose = _applicationOperationClosePending;
                 if (!_applicationOperationWindowClosed && _routeComparisonReportResultV2 is not null)
