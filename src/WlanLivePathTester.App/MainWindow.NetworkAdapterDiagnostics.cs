@@ -5,10 +5,19 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using WlanLivePathTester.Core.Adapters;
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Windows.Adapters;
 using WlanLivePathTester.Windows.Wlan;
 
 namespace WlanLivePathTester.App;
+
+internal sealed record NetworkAdapterDiagnosticPresentation(
+    string SelectionText,
+    WirelessAdapterSelectionStatus Status,
+    string WarningText,
+    bool HasWarnings,
+    string InventoryText,
+    string? RecommendedWirelessAdapterId);
 
 public partial class MainWindow
 {
@@ -19,21 +28,19 @@ public partial class MainWindow
     private bool _networkAdapterDiagnosticsTabAdded;
     private string? _recommendedWirelessAdapterId;
 
+    // The same path is used for manual refresh, deferred OS notifications and
+    // injected WPF tests. Production defaults to the existing local readers.
+    internal Func<CancellationToken, Task<NetworkAdapterDiagnosticPresentation>>
+        CollectNetworkAdapterDiagnostics { get; set; } = CollectNetworkAdapterDiagnosticsAsync;
+
     internal void EnsureNetworkAdapterDiagnosticsTab()
     {
-        if (_networkAdapterDiagnosticsTabAdded)
-        {
-            return;
-        }
-
-        TabControl? tabControl = FindVisualDescendant<TabControl>(this);
-        if (tabControl is null)
-        {
-            return;
-        }
-
+        if (_networkAdapterDiagnosticsTabAdded || _applicationOperationWindowClosed) return;
+        TabControl? tabControl = FindApplicationTabControl();
+        if (tabControl is null) return;
         tabControl.Items.Add(CreateNetworkAdapterDiagnosticsTab());
         _networkAdapterDiagnosticsTabAdded = true;
+        Closed += OnNetworkAdapterDiagnosticsClosed;
         RefreshNetworkAdapterDiagnostics();
     }
 
@@ -46,9 +53,7 @@ public partial class MainWindow
             Padding = new Thickness(12, 8, 12, 8),
             HorizontalAlignment = HorizontalAlignment.Left
         };
-        _refreshNetworkAdapterDiagnosticsButton.Click +=
-            OnRefreshNetworkAdapterDiagnosticsClick;
-
+        _refreshNetworkAdapterDiagnosticsButton.Click += OnRefreshNetworkAdapterDiagnosticsClick;
         _networkAdapterSelectionText = new TextBlock
         {
             FontFamily = new FontFamily("Consolas"),
@@ -94,19 +99,12 @@ public partial class MainWindow
             Child = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
-                Text = "동일 우선순위의 활성 물리 Wi-Fi가 여러 개면 임의로 첫 번째 어댑터를 선택하지 않습니다. Native WLAN GUID를 직접 읽지 못하면 연결 identity의 설명 완전 일치로 한 번 보완하며, 중복 후보는 선택하지 않습니다."
+                Text = "동일 우선순위의 활성 물리 Wi-Fi가 여러 개면 임의로 첫 번째 어댑터를 선택하지 않습니다. Native WLAN GUID를 직접 읽지 못하면 연결 identity의 설명 완전 일치로 한 번 보완하며, 중복 후보는 선택하지 않습니다. 자동 갱신은 다른 작업이 실제로 끝난 뒤 실행합니다."
             }
         });
         content.Children.Add(_refreshNetworkAdapterDiagnosticsButton);
-        content.Children.Add(CreateAdapterResultCard(
-            "권장 Wi-Fi 선택",
-            _networkAdapterSelectionText,
-            marginTop: 18));
-        content.Children.Add(CreateAdapterResultCard(
-            "경고",
-            _networkAdapterWarningText,
-            marginTop: 12));
-
+        content.Children.Add(CreateAdapterResultCard("권장 Wi-Fi 선택", _networkAdapterSelectionText, 18));
+        content.Children.Add(CreateAdapterResultCard("경고", _networkAdapterWarningText, 12));
         StackPanel inventoryPanel = new();
         inventoryPanel.Children.Add(new TextBlock
         {
@@ -128,7 +126,6 @@ public partial class MainWindow
             MaxHeight = 480,
             Content = _networkAdapterInventoryText
         });
-
         content.Children.Add(new Border
         {
             Margin = new Thickness(0, 12, 0, 0),
@@ -139,26 +136,18 @@ public partial class MainWindow
             BorderThickness = new Thickness(1),
             Child = inventoryPanel
         });
-
         return new TabItem
         {
             Header = "어댑터 진단",
             Content = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Content = new Border
-                {
-                    Padding = new Thickness(20),
-                    Child = content
-                }
+                Content = new Border { Padding = new Thickness(20), Child = content }
             }
         };
     }
 
-    private static Border CreateAdapterResultCard(
-        string title,
-        TextBlock content,
-        double marginTop)
+    private static Border CreateAdapterResultCard(string title, TextBlock content, double marginTop)
     {
         StackPanel panel = new();
         panel.Children.Add(new TextBlock
@@ -169,7 +158,6 @@ public partial class MainWindow
         });
         content.Margin = new Thickness(0, 8, 0, 0);
         panel.Children.Add(content);
-
         return new Border
         {
             Margin = new Thickness(0, marginTop, 0, 0),
@@ -182,85 +170,70 @@ public partial class MainWindow
         };
     }
 
-    private void OnRefreshNetworkAdapterDiagnosticsClick(
-        object sender,
-        RoutedEventArgs e)
-    {
-        if (_measurementRunning || _observationCancellation is not null)
-        {
-            SetNetworkAdapterSelectionText(
-                "측정 또는 브라우저 관찰이 진행 중입니다. 현재 인터페이스 기준이 바뀌지 않도록 작업이 끝난 뒤 새로고침하십시오.",
-                Brushes.DarkOrange);
-            return;
-        }
+    private async void OnRefreshNetworkAdapterDiagnosticsClick(object sender, RoutedEventArgs e) =>
+        await RunNetworkAdapterDiagnosticsAsync();
 
-        RefreshNetworkAdapterDiagnostics();
+    internal Task<bool> RunNetworkAdapterDiagnosticsAsync(bool automatic = false)
+    {
+        Dispatcher.VerifyAccess();
+        if (_applicationOperationWindowClosed || !_networkAdapterDiagnosticsTabAdded
+            || _networkAdapterSelectionText is null || _networkAdapterWarningText is null
+            || _networkAdapterInventoryText is null) return Task.FromResult(false);
+        Func<CancellationToken, Task<NetworkAdapterDiagnosticPresentation>> collect = CollectNetworkAdapterDiagnostics;
+        return RunLocalDiagnosticAsync(
+            ApplicationOperationKind.NetworkAdapterDiagnostics,
+            collect,
+            result =>
+            {
+                ArgumentNullException.ThrowIfNull(result);
+                _recommendedWirelessAdapterId = result.RecommendedWirelessAdapterId;
+                SetNetworkAdapterSelectionText(result.SelectionText,
+                    result.Status == WirelessAdapterSelectionStatus.Selected ? Brushes.DarkGreen
+                        : result.Status == WirelessAdapterSelectionStatus.Ambiguous ? Brushes.DarkOrange : Brushes.DarkRed);
+                _networkAdapterWarningText.Text = result.WarningText;
+                _networkAdapterWarningText.Foreground = result.HasWarnings ? Brushes.DarkOrange : Brushes.DarkGreen;
+                _networkAdapterInventoryText.Text = result.InventoryText;
+            },
+            busy =>
+            {
+                if (_refreshNetworkAdapterDiagnosticsButton is not null)
+                    _refreshNetworkAdapterDiagnosticsButton.IsEnabled = !busy;
+            },
+            SetNetworkAdapterSelectionText,
+            automatic);
     }
 
-    private void RefreshNetworkAdapterDiagnostics()
-    {
-        if (_networkAdapterSelectionText is null
-            || _networkAdapterWarningText is null
-            || _networkAdapterInventoryText is null)
+    private static Task<NetworkAdapterDiagnosticPresentation> CollectNetworkAdapterDiagnosticsAsync(CancellationToken token) =>
+        Task.Run(() =>
         {
-            return;
-        }
-
-        WlanReadResult wlanRead = NativeWlanReader.ReadCurrent();
-        WlanInterfaceIdentityReadResult identityRead =
-            WlanInterfaceIdentityReader.ReadCurrent();
-        WlanSnapshot? connectedWlan =
-            WlanInterfaceIdentityReader.AttachIdentity(
-                wlanRead.FirstConnectedInterface,
-                identityRead);
-        NetworkAdapterInventoryReadResult inventoryRead =
-            NetworkAdapterInventoryReader.Read(
-                connectedWlan?.InterfaceId);
-        WirelessAdapterSelectionResult selection =
-            NetworkAdapterSelector.Select(inventoryRead.Adapters);
-
-        _recommendedWirelessAdapterId =
-            selection.Selected?.Candidate.Id;
-        SetNetworkAdapterSelectionText(
-            FormatAdapterSelection(
-                selection,
-                connectedWlan,
-                identityRead),
-            selection.Status == WirelessAdapterSelectionStatus.Selected
-                ? Brushes.DarkGreen
-                : selection.Status == WirelessAdapterSelectionStatus.Ambiguous
-                    ? Brushes.DarkOrange
-                    : Brushes.DarkRed);
-
-        List<string> warnings =
-        [
-            .. inventoryRead.Warnings,
-            .. selection.Warnings
-        ];
-        if (!identityRead.IsSuccess)
-        {
-            warnings.Add(
-                "WLAN identity 목록을 읽지 못해 Native WLAN GUID 우선순위를 적용하지 못했습니다. 설명·상태 근거만 사용했습니다.");
-        }
-        else if (connectedWlan is not null
-                 && string.IsNullOrWhiteSpace(connectedWlan.InterfaceId))
-        {
-            warnings.Add(
-                "연결된 Native WLAN과 정확히 하나의 identity를 대응시키지 못했습니다. 다중 Wi-Fi 환경에서는 선택 결과를 직접 확인하십시오.");
-        }
-
-        _networkAdapterWarningText.Text = warnings.Count == 0
-            ? "추가 경고 없음"
-            : string.Join(
-                Environment.NewLine,
-                warnings.Select((warning, index) =>
-                    $"{index + 1}. {warning}"));
-        _networkAdapterWarningText.Foreground = warnings.Count == 0
-            ? Brushes.DarkGreen
-            : Brushes.DarkOrange;
-        _networkAdapterInventoryText.Text =
-            FormatAdapterInventory(selection.Inventory);
-    }
+            token.ThrowIfCancellationRequested();
+            WlanReadResult wlanRead = NativeWlanReader.ReadCurrent();
+            token.ThrowIfCancellationRequested();
+            WlanInterfaceIdentityReadResult identityRead = WlanInterfaceIdentityReader.ReadCurrent();
+            token.ThrowIfCancellationRequested();
+            WlanSnapshot? connectedWlan = WlanInterfaceIdentityReader.AttachIdentity(
+                wlanRead.FirstConnectedInterface, identityRead);
+            NetworkAdapterInventoryReadResult inventoryRead = NetworkAdapterInventoryReader.Read(connectedWlan?.InterfaceId);
+            token.ThrowIfCancellationRequested();
+            WirelessAdapterSelectionResult selection = NetworkAdapterSelector.Select(inventoryRead.Adapters);
+            List<string> warnings = [.. inventoryRead.Warnings, .. selection.Warnings];
+            if (!identityRead.IsSuccess)
+            {
+                warnings.Add("WLAN identity 목록을 읽지 못해 Native WLAN GUID 우선순위를 적용하지 못했습니다. 설명·상태 근거만 사용했습니다.");
+            }
+            else if (connectedWlan is not null && string.IsNullOrWhiteSpace(connectedWlan.InterfaceId))
+            {
+                warnings.Add("연결된 Native WLAN과 정확히 하나의 identity를 대응시키지 못했습니다. 다중 Wi-Fi 환경에서는 선택 결과를 직접 확인하십시오.");
+            }
+            return new NetworkAdapterDiagnosticPresentation(
+                FormatAdapterSelection(selection, connectedWlan, identityRead),
+                selection.Status,
+                warnings.Count == 0 ? "추가 경고 없음" : string.Join(Environment.NewLine,
+                    warnings.Select((warning, index) => $"{index + 1}. {warning}")),
+                warnings.Count > 0,
+                FormatAdapterInventory(selection.Inventory),
+                selection.Selected?.Candidate.Id);
+        }, token);
 
     private static string FormatAdapterSelection(
         WirelessAdapterSelectionResult selection,
@@ -270,7 +243,6 @@ public partial class MainWindow
         StringBuilder builder = new();
         builder.AppendLine($"상태: {FormatSelectionStatus(selection.Status)}");
         builder.AppendLine(selection.Message);
-
         if (selection.Selected is ClassifiedNetworkAdapter selected)
         {
             builder.AppendLine($"권장 어댑터: {SafeAdapterName(selected.Candidate)}");
@@ -282,120 +254,86 @@ public partial class MainWindow
         {
             builder.AppendLine("후보:");
             foreach (ClassifiedNetworkAdapter candidate in selection.Candidates)
-            {
-                builder.AppendLine(
-                    $"- {SafeAdapterName(candidate.Candidate)} · {Fingerprint(candidate.Candidate.Id)} · 점수 {candidate.WirelessSelectionScore}");
-            }
+                builder.AppendLine($"- {SafeAdapterName(candidate.Candidate)} · {Fingerprint(candidate.Candidate.Id)} · 점수 {candidate.WirelessSelectionScore}");
         }
-
         builder.AppendLine($"WLAN identity 조회: {(identityRead.IsSuccess ? "성공" : "제한")} · 항목 {identityRead.Interfaces.Count}개");
         if (connectedWlan is not null)
         {
             builder.AppendLine($"Native WLAN 연결 상태: {(connectedWlan.IsConnected ? "연결됨" : "연결 안 됨")}");
             builder.AppendLine($"Native WLAN ID 지문: {Fingerprint(connectedWlan.InterfaceId)}");
         }
-        else
-        {
-            builder.AppendLine("Native WLAN 현재 연결: 확인되지 않음");
-        }
-
+        else builder.AppendLine("Native WLAN 현재 연결: 확인되지 않음");
         return builder.ToString().TrimEnd();
     }
 
-    private static string FormatAdapterInventory(
-        IReadOnlyList<ClassifiedNetworkAdapter> inventory)
+    private static string FormatAdapterInventory(IReadOnlyList<ClassifiedNetworkAdapter> inventory)
     {
-        if (inventory.Count == 0)
-        {
-            return "Windows에서 읽은 어댑터가 없습니다.";
-        }
-
+        if (inventory.Count == 0) return "Windows에서 읽은 어댑터가 없습니다.";
         StringBuilder builder = new();
         builder.AppendLine("No  Role                 State       Type                 Score  GW  IP  WLAN  ID         Name");
         builder.AppendLine(new string('-', 116));
-
         for (int index = 0; index < inventory.Count; index++)
         {
             ClassifiedNetworkAdapter item = inventory[index];
             NetworkAdapterCandidate adapter = item.Candidate;
-            string score = item.IsEligiblePhysicalWireless
-                ? item.WirelessSelectionScore.ToString()
-                : "-";
+            string score = item.IsEligiblePhysicalWireless ? item.WirelessSelectionScore.ToString() : "-";
             builder.AppendLine(string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
                 "{0,-3} {1,-20} {2,-11} {3,-20} {4,5}  {5,-2}  {6,-2}  {7,-4}  {8,-10} {9}",
-                index + 1,
-                FormatAdapterRole(item.Role),
-                adapter.OperationalStatus,
-                adapter.InterfaceType,
-                score,
-                adapter.HasDefaultGateway ? "Y" : "-",
-                adapter.HasUnicastAddress ? "Y" : "-",
-                adapter.IsNativeWlanConnected ? "Y" : "-",
-                Fingerprint(adapter.Id),
-                SafeAdapterName(adapter)));
+                index + 1, FormatAdapterRole(item.Role), adapter.OperationalStatus,
+                adapter.InterfaceType, score, adapter.HasDefaultGateway ? "Y" : "-",
+                adapter.HasUnicastAddress ? "Y" : "-", adapter.IsNativeWlanConnected ? "Y" : "-",
+                Fingerprint(adapter.Id), SafeAdapterName(adapter)));
         }
-
         return builder.ToString().TrimEnd();
     }
 
-    private static string FormatSelectionStatus(
-        WirelessAdapterSelectionStatus status) =>
-        status switch
-        {
-            WirelessAdapterSelectionStatus.Selected => "선택됨",
-            WirelessAdapterSelectionStatus.Ambiguous => "모호함",
-            WirelessAdapterSelectionStatus.NoConnectedPhysicalWireless =>
-                "연결된 물리 Wi-Fi 없음",
-            _ => "물리 Wi-Fi 후보 없음"
-        };
+    private static string FormatSelectionStatus(WirelessAdapterSelectionStatus status) => status switch
+    {
+        WirelessAdapterSelectionStatus.Selected => "선택됨",
+        WirelessAdapterSelectionStatus.Ambiguous => "모호함",
+        WirelessAdapterSelectionStatus.NoConnectedPhysicalWireless => "연결된 물리 Wi-Fi 없음",
+        _ => "물리 Wi-Fi 후보 없음"
+    };
 
-    private static string FormatAdapterRole(NetworkAdapterRole role) =>
-        role switch
-        {
-            NetworkAdapterRole.PhysicalWireless => "Physical Wi-Fi",
-            NetworkAdapterRole.PhysicalEthernet => "Physical Ethernet",
-            NetworkAdapterRole.WiFiDirectOrHosted => "Wi-Fi Direct/SoftAP",
-            NetworkAdapterRole.VpnOrTunnel => "VPN/Tunnel",
-            NetworkAdapterRole.VirtualSwitch => "Virtual Switch",
-            NetworkAdapterRole.Bluetooth => "Bluetooth",
-            NetworkAdapterRole.Loopback => "Loopback",
-            NetworkAdapterRole.OtherVirtual => "Other Virtual",
-            _ => "Unknown"
-        };
+    private static string FormatAdapterRole(NetworkAdapterRole role) => role switch
+    {
+        NetworkAdapterRole.PhysicalWireless => "Physical Wi-Fi",
+        NetworkAdapterRole.PhysicalEthernet => "Physical Ethernet",
+        NetworkAdapterRole.WiFiDirectOrHosted => "Wi-Fi Direct/SoftAP",
+        NetworkAdapterRole.VpnOrTunnel => "VPN/Tunnel",
+        NetworkAdapterRole.VirtualSwitch => "Virtual Switch",
+        NetworkAdapterRole.Bluetooth => "Bluetooth",
+        NetworkAdapterRole.Loopback => "Loopback",
+        NetworkAdapterRole.OtherVirtual => "Other Virtual",
+        _ => "Unknown"
+    };
 
     private static string SafeAdapterName(NetworkAdapterCandidate adapter)
     {
-        string name = string.IsNullOrWhiteSpace(adapter.Name)
-            ? adapter.Description
-            : adapter.Name;
-        return string.IsNullOrWhiteSpace(name)
-            ? "이름 없는 어댑터"
+        string name = string.IsNullOrWhiteSpace(adapter.Name) ? adapter.Description : adapter.Name;
+        return string.IsNullOrWhiteSpace(name) ? "이름 없는 어댑터"
             : name.Replace('\r', ' ').Replace('\n', ' ').Trim();
     }
 
     private static string Fingerprint(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "없음";
-        }
-
-        byte[] hash = SHA256.HashData(
-            Encoding.UTF8.GetBytes(value.Trim()));
+        if (string.IsNullOrWhiteSpace(value)) return "없음";
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value.Trim()));
         return Convert.ToHexString(hash)[..10].ToLowerInvariant();
     }
 
-    private void SetNetworkAdapterSelectionText(
-        string text,
-        Brush brush)
+    private void SetNetworkAdapterSelectionText(string text, Brush brush)
     {
-        if (_networkAdapterSelectionText is null)
-        {
-            return;
-        }
-
+        if (_networkAdapterSelectionText is null || _applicationOperationWindowClosed) return;
         _networkAdapterSelectionText.Text = text;
         _networkAdapterSelectionText.Foreground = brush;
+    }
+
+    private void OnNetworkAdapterDiagnosticsClosed(object? sender, EventArgs e)
+    {
+        if (_refreshNetworkAdapterDiagnosticsButton is not null)
+            _refreshNetworkAdapterDiagnosticsButton.Click -= OnRefreshNetworkAdapterDiagnosticsClick;
+        Closed -= OnNetworkAdapterDiagnosticsClosed;
     }
 }

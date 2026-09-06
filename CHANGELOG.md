@@ -6,6 +6,11 @@
 
 ### Added
 
+- 라우팅 근거·어댑터 진단·인터페이스 환경 조회를 같은 UI/Core lease에서 실행하는 공통 진단 runner
+- 기본 750ms debounce와 보류 요청 합치기·전역 idle 재개·절전/종료 정리를 담당하는 DeferredNetworkRefreshController
+- 라우팅·반복·관찰·어댑터·인터페이스 전용 보고서의 공통 AuxiliaryReportSection과 DiagnosticReportSave 수명
+- 실제 WPF에서 세 진단·다섯 보고서·전역 종류 조합·1,000개 이벤트·취소/종료를 검증하는 OperationLifecycleSmoke 25개 그룹
+- `docs/DIAGNOSTIC_REFRESH_LIFECYCLE.md`에 적용 범위·협력적 제한 시간·저장 한계·남은 #16 이행 기록
 - 기존 LocalDiagnosticReport에 optional 내부 DIRECT–프록시 경로 snapshot과 schema 1.2 지원
 - JSON·CSV·오프라인 HTML에 별도 완료 시각·프록시 출처·정확 비교·후보별 안전 증거 표시
 - 통합 보고서 저장을 같은 UI/Core coordinator의 DiagnosticReportSave에 연결
@@ -27,6 +32,11 @@
 
 ### Fixed
 
+- 자동 어댑터 갱신이 측정·관찰만 검사해 다른 진단/보고서 작업과 겹치거나 보류 요청이 재개되지 않는 경계
+- 라우팅 확인의 Closed 이벤트가 실행 중인 취소 토큰을 즉시 폐기하던 수명 경계
+- 취소·협력적 시간 제한·절전 뒤 늦게 반환된 로컬 진단값이 최신 성공 상태로 적용될 수 있는 경계
+- 다섯 전용 보고서의 중복 저장·다른 작업 시작·저장 중 파일 열기·조기 종료 경계
+- 전용 보고서 종료 대기 중 오류가 창 닫기로 가려지는 문제와 이전 성공 경로 보존
 - 통합 보고서 저장 중 중복 생성·다른 진단 시작·조기 창 종료 가능성
 - 종료 대기 중 통합 저장 실패가 창 닫기로 가려지는 문제: 오류 검토를 위해 창 유지
 - 통합 경로 Finding 중복 및 일반 NO_CLEAR_FAILURE_PATTERN과 구체적 경로 판정의 충돌
@@ -41,6 +51,11 @@
 
 ### Changed
 
+- 로컬 동기 inventory 조회는 worker에서 수행하고 유효한 결과만 Dispatcher에서 적용
+- 자동 갱신의 직접 timer/관찰 버튼 이벤트 의존을 단일 보류 요청 controller로 대체
+- 라우팅 확인 중 대상·해석 목적·URL 가져오기 버튼 잠금, 취소는 현재 lease로 전달
+- 다섯 전용 보고서는 기존 writer와 고유 안내를 유지하며 UI·저장/열기·정리 코드만 공통화
+- 고정 개발 기준 #17의 병합을 확인해 기준선 80%로 갱신; 부분 이행인 #16에 완료 점수를 더하지 않음
 - 통합 보고서의 기존 9개 positional 생성자·Deconstruct 유지, 경로 없는 이전 JSON/CSV/HTML 호환
 - 경로 증거와 통합 보고서 생성 시각을 구분하고 동시 측정으로 오해하지 않도록 한계 명시
 - 통합 저장 실패 시 이전 성공 경로 유지, 예외 원문 대신 유형 표시, 실제 쓰기 완료 후 lease 반환
@@ -56,10 +71,12 @@
 - 동기 WinHTTP 실행 중 네이티브 핸들을 강제로 닫지 않으며 실제 호출 반환 전에 완료로 처리하지 않음
 - 원문 입력 검증 실패 시 실행 가능한 프록시 지시문을 반환하지 않고 대상별 실패를 수동 프록시 또는 DIRECT로 대체하지 않음
 - 통합 경로 섹션은 기존 안전 mapper를 재사용하며 원본 RouteEvidence·프록시 문자열·전체 GUID를 직렬화하지 않음
+- 새 진단/전용 보고서 오류는 유형만 표시하고 원문 예외·사용자 디렉터리를 오류 문장에 반사하지 않음
 
 ### Planned
 
-- 일반 로컬 경로 확인·다른 전용 보고서 저장·자동 어댑터 새로고침의 공통 작업 수명 연결
+- Core-only 경로 비교·프록시 가져오기·전용 경로 비교 보고서의 공통 UI/Closing 이행과 나머지 조회 경계 점검
+- 공통 취소 실패 표시 및 legacy writer 파일세트 취소/복구 검토
 - 나머지 원문 입력 경계 감사, 문서/공개 릴리스 검증
 - `WINHTTP_FLAG_ASYNC`와 상태 콜백 기반 비동기 WinHTTP 전송 계층
 - 목적지별 Windows route·interface metric을 개인정보 노출 없이 요약하는 로컬 경로 판정
