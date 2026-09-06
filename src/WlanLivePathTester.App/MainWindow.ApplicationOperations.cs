@@ -8,8 +8,7 @@ namespace WlanLivePathTester.App;
 
 public partial class MainWindow
 {
-    // One owner shared by both the existing route/import handlers and the
-    // measurement/observation UI lifetime adapter.
+    // One owner shared by route/import handlers and all migrated UI operations.
     private readonly ApplicationOperationCoordinator
         _applicationOperations = new();
     private ApplicationOperationLease? _routeComparisonOperationLeaseV3;
@@ -51,41 +50,42 @@ public partial class MainWindow
     {
         _applicationOperationUi = new ApplicationOperationUiSession(
             Dispatcher, _applicationOperations);
+        InitializeNetworkAdapterRefreshController();
         Closing += OnApplicationOperationClosing;
         Closed += OnApplicationOperationClosed;
     }
 
     private ApplicationOperationUiLease? TryBeginUiApplicationOperation(
         ApplicationOperationKind kind,
-        Action? requestCancellation = null)
+        Action? requestCancellation = null,
+        bool showRejection = true)
     {
         Dispatcher.VerifyAccess();
-        TabControl? tabs = FindVisualDescendant<TabControl>(this);
-        // Initialized Window.Content may exist before its presentation source.
-        if (tabs is null && Content is DependencyObject contentRoot)
-        {
-            tabs = contentRoot as TabControl
-                ?? FindVisualDescendant<TabControl>(contentRoot);
-        }
+        TabControl? tabs = FindApplicationTabControl();
         if (_applicationOperationWindowClosed || _applicationOperationUi is null
             || tabs?.SelectedItem is not TabItem selected || !selected.IsEnabled)
         {
-            ShowApplicationOperationBlocked("현재 화면에서는 새 작업을 시작할 수 없습니다.");
+            if (showRejection) ShowApplicationOperationBlocked("현재 화면에서는 새 작업을 시작할 수 없습니다.");
             return null;
         }
-        // Compatibility guard for feature handlers not yet migrated to leases.
+        if (_applicationOperationClosePending || _routeProxyClosePending || _routeReportCloseRequested)
+        {
+            if (showRejection) ShowApplicationOperationBlocked("창 종료를 처리하고 있어 새 작업을 시작하지 않았습니다.");
+            return null;
+        }
+        // Compatibility guards remain for feature handlers not yet migrated.
         if (_measurementRunning || _observationCancellation is not null
             || _routeComparisonCancellationV3 is not null
             || _routeProxyOperationCompletion is { Task.IsCompleted: false }
             || RouteReportSaveBusy)
         {
-            ShowApplicationOperationBlocked(
+            if (showRejection) ShowApplicationOperationBlocked(
                 "측정·관찰·경로 작업 또는 보고서 저장이 진행 중입니다. 완료하거나 중지한 뒤 다시 실행하십시오.");
             return null;
         }
         ApplicationOperationUiLease? lease = _applicationOperationUi.TryBegin(
             kind, tabs, requestCancellation, out ApplicationOperationStartStatus status);
-        if (lease is null)
+        if (lease is null && showRejection)
         {
             ShowApplicationOperationBlocked(status == ApplicationOperationStartStatus.ShutdownPending
                 ? "창 종료를 처리하고 있어 새 작업을 시작하지 않았습니다."
@@ -110,8 +110,8 @@ public partial class MainWindow
             e.Cancel = true;
             return;
         }
-        // Route import/report features already have their own deferred-close
-        // handler. Do not start a competing Close continuation for their lease.
+        // Existing route import/report deferred-close handlers still own their
+        // Core leases. Do not create a second Close continuation for them.
         if (!session.HasActiveUiLease) return;
         e.Cancel = true;
         _applicationOperationClosePending = true;
@@ -130,8 +130,6 @@ public partial class MainWindow
                 && !Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
             {
                 Close();
-                // Preserve the ability to operate when a different Closing
-                // handler vetoes the final close attempt.
                 if (!_applicationOperationWindowClosed) session.CancelShutdownRequest();
             }
         }
@@ -144,12 +142,14 @@ public partial class MainWindow
         finally
         {
             _applicationOperationClosePending = false;
+            _networkAdapterRefreshController?.StateMayHaveChanged();
         }
     }
 
     private void OnApplicationOperationClosed(object? sender, EventArgs e)
     {
         _applicationOperationWindowClosed = true;
+        DisposeNetworkAdapterRefreshController();
         _applicationOperationUi?.RequestCancellation();
         Closing -= OnApplicationOperationClosing;
         Closed -= OnApplicationOperationClosed;
