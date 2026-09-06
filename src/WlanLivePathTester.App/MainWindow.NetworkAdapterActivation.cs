@@ -4,13 +4,9 @@ public partial class MainWindow
 {
     internal void RefreshNetworkAdapterDiagnosticsIfIdle()
     {
-        if (!_networkAdapterDiagnosticsTabAdded
-            || _measurementRunning
-            || _observationCancellation is not null)
-        {
-            return;
-        }
-
+        if (!_networkAdapterDiagnosticsTabAdded || _applicationOperationWindowClosed) return;
+        // The shared scheduler retains this request while busy and performs it
+        // once the current Core/UI lease has actually completed.
         RefreshNetworkAdapterDiagnostics();
     }
 }
