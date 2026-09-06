@@ -44,7 +44,7 @@ internal static class DiagnosticAndRefreshTests
                 report.CaptureAndSave = () => { calls++; return Task.FromResult<AuxiliaryReportExport?>(Export()); };
             foreach (ApplicationOperationKind owner in Enum.GetValues<ApplicationOperationKind>().Where(k => k != ApplicationOperationKind.None))
             {
-                using ApplicationOperationLease active = Core(window).TryBegin(owner).Lease!;
+                using ApplicationOperationLease active = SmokeContext.Core(window).TryBegin(owner).Lease!;
                 foreach (ApplicationOperationKind kind in DiagnosticKinds)
                     Ensure(!await Run(window, kind), "A blocked reader must not acquire a lease.");
                 foreach (AuxiliaryReportSection report in window.AuxiliaryReportSections.Values)
@@ -276,7 +276,7 @@ internal static class DiagnosticAndRefreshTests
             foreach (ApplicationOperationKind owner in Enum.GetValues<ApplicationOperationKind>().Where(k => k != ApplicationOperationKind.None))
             {
                 int before = calls;
-                ApplicationOperationLease active = Core(window).TryBegin(owner).Lease!;
+                ApplicationOperationLease active = SmokeContext.Core(window).TryBegin(owner).Lease!;
                 controller.Resume();
                 controller.RequestRefresh();
                 NotifyStaleIdle(window);
@@ -377,14 +377,14 @@ internal static class DiagnosticAndRefreshTests
         window.CollectNetworkAdapterDiagnostics = _ => { calls++; return Task.FromResult(Adapter("after-shutdown-veto")); };
         try
         {
-            await Core(window).RequestShutdownAsync();
+            await SmokeContext.Core(window).RequestShutdownAsync();
             controller.Resume();
             controller.RequestRefresh();
             await DrainAsync();
             await controller.ProcessPendingAsync();
             Ensure(calls == 0 && controller.HasPendingRequest && !controller.IsTimerEnabled,
                 "Idle with shutdown requested is not available for refresh.");
-            Core(window).CancelShutdownRequest();
+            SmokeContext.Core(window).CancelShutdownRequest();
             await DrainAsync();
             await controller.ProcessPendingAsync();
             Ensure(calls == 1, "Canceled shutdown must release a retained request.");
