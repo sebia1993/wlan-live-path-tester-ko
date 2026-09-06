@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using WlanLivePathTester.Core.Measurements;
 using WlanLivePathTester.Core.Observation;
 
@@ -12,7 +13,13 @@ public sealed record LocalDiagnosticReport(
     ReportObservationSection? BrowserObservation,
     IReadOnlyList<ReportFinding> Findings,
     IReadOnlyList<string> Limitations,
-    IReadOnlyList<ReportMeasurementSection>? StructuredMeasurements = null);
+    IReadOnlyList<ReportMeasurementSection>? StructuredMeasurements = null)
+{
+    // An init-only body property preserves the existing nine-argument
+    // constructor and generated Deconstruct. Attach via LocalReportRouteComparison.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public InternalProxyRouteComparisonRunReportSnapshot? InternalProxyRouteComparison { get; init; }
+}
 
 public sealed record ReportMetadata(
     DateTimeOffset GeneratedAt,
