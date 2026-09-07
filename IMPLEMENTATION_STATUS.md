@@ -4,7 +4,15 @@
 
 코드 작성, 정확한 commit의 자동 검증 성공, main 병합, 공개 EXE·ZIP 배포와 사용자 회사 환경 검증을 각각 구분합니다.
 
-## 현재 검증된 main
+## 최신 상태 (2026-09-07)
+
+- PR #130 병합: `000ec4a` (원문 입력 경계).
+- 검증 소스 `fd8c047`: Windows `34096879339`, Guide `34096879388`, Package `34096879400` 성공. 입력 27그룹·0실패, 전체 13/13 suite 및 패키지 검사 성공.
+- 아래 #130 실패 기록은 이전 revision의 이력입니다. 최신 근거는 `docs/RAW_NETWORK_INPUT_AUDIT.md` 상단을 따릅니다.
+- 무선 중심 OSI 안내형 화면 개편을 진행 중입니다. 요구사항과 검증 범위는 `docs/WIRELESS_GUIDED_DIAGNOSTICS.md`에 기록합니다. 새 화면은 아직 Windows CI 및 실제 표시 검증 전입니다.
+- 공개 Release, 안전한 비동기 WinHTTP, 회사 환경 검증 및 코드서명은 별도이며 완료를 주장하지 않습니다.
+
+## 이전 검증된 main
 
 - PR #129 merge: `6870775fc257c73b43bfdcc26ecc50916d1a0acf`
 - 고정 완료 기준: **17/20 = 85%**
