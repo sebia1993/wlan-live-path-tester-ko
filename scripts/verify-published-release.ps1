@@ -134,12 +134,11 @@ $portableAssetName = 'WlanLivePathTester-win-x64-portable.zip'
 $singleAssetName = 'WlanLivePathTester-win-x64-single-file.exe'
 $checksumAssetName = 'SHA256SUMS.txt'
 $noticeAssetName = 'THIRD_PARTY_NOTICES.md'
-$expectedAssetNames = @(
-    $checksumAssetName,
-    $noticeAssetName,
-    $portableAssetName,
-    $singleAssetName
-) | Sort-Object
+# Older immutable releases retain their original four-asset contract.
+$legacyAssets = $version -match '^0\.1\.0-alpha\.(?<sequence>[0-9]+)$' -and [int]$Matches['sequence'] -le 11
+$expectedAssetNames = if ($legacyAssets) {
+    @($checksumAssetName, $noticeAssetName, $portableAssetName, $singleAssetName) | Sort-Object
+} else { @($portableAssetName) }
 
 try {
     if (Test-Path -LiteralPath $resolvedDownloadRoot) {
@@ -195,7 +194,7 @@ try {
     Assert-Condition `
         -Condition (($remoteAssetNames -join '|') -ceq `
             ($expectedAssetNames -join '|')) `
-        -Message "Published release must contain exactly four approved assets. Actual: $($remoteAssetNames -join ', ')"
+        -Message "Published release asset set does not match its version contract. Actual: $($remoteAssetNames -join ', ')"
 
     Write-Host 'Downloading the published assets again...' `
         -ForegroundColor Cyan
@@ -263,6 +262,7 @@ try {
             -Message "Downloaded size differs from GitHub metadata: $name"
     }
 
+    if ($legacyAssets) {
     $checksumPath = Join-Path `
         $resolvedDownloadRoot `
         $checksumAssetName
@@ -301,6 +301,8 @@ try {
             -Condition ($declaredHashes[$assetName] -ceq `
                 $localHashes[$assetName]) `
             -Message "SHA256SUMS.txt mismatch after publication: $assetName"
+    }
+
     }
 
     $tagRef = Invoke-GhJson -Arguments @(
@@ -435,31 +437,32 @@ try {
         -Condition ($buildInfo.Contains('SelfContained=true')) `
         -Message 'Published BUILD_INFO.txt does not identify a self-contained build.'
 
+    if ($legacyAssets) {
     $singlePath = Join-Path `
         $resolvedDownloadRoot `
         $singleAssetName
     Assert-Condition `
         -Condition (Test-PeHeader -Path $singlePath) `
         -Message 'Published single-file executable does not have an MZ header.'
+    }
     $productVersion = (Get-Item `
-        -LiteralPath $singlePath).VersionInfo.ProductVersion
+        -LiteralPath $portableExe).VersionInfo.ProductVersion
     Assert-Condition `
         -Condition (-not [string]::IsNullOrWhiteSpace($productVersion)) `
-        -Message 'Published single-file executable has no ProductVersion.'
+        -Message 'Published Portable executable has no ProductVersion.'
     Assert-Condition `
         -Condition ($productVersion.StartsWith(
             $version,
             [StringComparison]::OrdinalIgnoreCase)) `
         -Message "Published ProductVersion '$productVersion' does not start with '$version'."
 
-    $signature = Get-AuthenticodeSignature -LiteralPath $singlePath
+    $signature = Get-AuthenticodeSignature -LiteralPath $portableExe
     Write-Host "Authenticode status: $($signature.Status)" `
         -ForegroundColor Yellow
     Write-Host "Published release verification passed: $normalizedTag" `
         -ForegroundColor Green
     Write-Host "Tag commit: $tagCommitSha"
     Write-Host "Portable SHA-256: $($localHashes[$portableAssetName])"
-    Write-Host "Single EXE SHA-256: $($localHashes[$singleAssetName])"
 }
 finally {
     $shouldRemove = $createdTemporaryRoot `

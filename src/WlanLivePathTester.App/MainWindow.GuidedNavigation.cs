@@ -11,7 +11,7 @@ public partial class MainWindow
 
     private static readonly string[] GuidedTitles =
     [
-        "① 무선 연결 · L1/L2", "② 실제 통신 경로 · L3", "③ 서비스 연결 · L4~L7",
+        "① 무선 연결 · L1/L2", "② 실제 통신 경로 · L3", "③ 프록시 설정과 서비스 확인",
         "④ 내부·외부 성능 비교", "⑤ 결과와 다음 점검"
     ];
     private static readonly string[] GuidedQuestions =
@@ -33,6 +33,7 @@ public partial class MainWindow
 
     private void InitializeGuidedNavigation()
     {
+        InitializeBeginnerGuidance();
         NavigateGuidedStep(0);
     }
 
@@ -80,11 +81,13 @@ public partial class MainWindow
         GuidedChoices.Children.Clear();
         if (step == 1)
         {
+            AddConnectionCheckChoice();
             AddGuidedChoice("인터페이스 확인", "인터페이스 환경");
             AddGuidedChoice("내부·프록시 경로 비교", "경로 비교");
         }
         if (step == 3)
         {
+            EnsureApprovedTargetPanel();
             AddGuidedChoice("단일 측정·대상 설정", "내부 · 외부 다운로드 측정");
             AddGuidedChoice("반복 측정", "반복 측정");
             AddGuidedChoice("브라우저 관찰", "브라우저 관찰");
@@ -104,6 +107,7 @@ public partial class MainWindow
             button.Background = selected ? Brushes.LightSteelBlue : Brushes.White;
         }
         ApplyGuidedPanelVisibility();
+        RefreshBeginnerGuidance();
         return true;
     }
 

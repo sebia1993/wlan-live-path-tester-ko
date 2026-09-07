@@ -81,6 +81,7 @@ public partial class MainWindow
         buttons.Children.Add(new Border { Width = 10 });
         buttons.Children.Add(_openLatestReportButton);
         StackPanel content = new();
+        content.Children.Add(CreateBeginnerSummaryPanel());
         content.Children.Add(new TextBlock
         {
             FontSize = 22, FontWeight = FontWeights.SemiBold, Text = "로컬 진단 보고서"
@@ -92,7 +93,8 @@ public partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             Text = "현재 WLAN·프록시 설정, 화면 진단 문구, 다운로드·브라우저 관찰 결과와 가장 최근 내부 DIRECT–프록시 경로 비교를 JSON·CSV·단일 HTML로 저장합니다. 보고서 생성은 네트워크 요청을 만들지 않습니다."
         });
-        content.Children.Add(new Border
+        StackPanel details = new();
+        details.Children.Add(new Border
         {
             Margin = new Thickness(0, 16, 0, 0), Padding = new Thickness(14), CornerRadius = new CornerRadius(8),
             Background = new SolidColorBrush(Color.FromRgb(232, 246, 243)),
@@ -103,7 +105,7 @@ public partial class MainWindow
                 Text = "기본 마스킹: SSID·BSSID·IP·MAC·이메일·URL 호스트·Windows 사용자 경로. 경로 비교는 원본 경로 객체 대신 검증된 상태·개수·지문만 포함합니다. 외부 리소스 없는 HTML과 SHA-256 목록을 저장합니다."
             }
         });
-        content.Children.Add(new Border
+        details.Children.Add(new Border
         {
             Margin = new Thickness(0, 12, 0, 0), Padding = new Thickness(14), CornerRadius = new CornerRadius(8),
             Background = new SolidColorBrush(Color.FromRgb(255, 248, 231)),
@@ -114,6 +116,7 @@ public partial class MainWindow
                 Text = "경로 비교는 별도로 실행한 최근 결과입니다. 완료 시각을 확인하고 다운로드와 동시에 측정한 경로로 단정하지 마십시오. 회사 밖 공유 전 내용을 검토하십시오. 저장 중 창 닫기는 실제 파일 쓰기가 끝날 때까지 보류됩니다."
             }
         });
+        content.Children.Add(new Expander { Header = "보고서 내용과 공유 시 주의사항", Margin = new Thickness(0, 12, 0, 12), Content = details });
         content.Children.Add(buttons);
         content.Children.Add(new Border
         {
@@ -204,7 +207,8 @@ public partial class MainWindow
 
     private IReadOnlyList<ReportTextSection> CaptureMeasurementTexts(DateTimeOffset capturedAt)
     {
-        List<ReportTextSection> sections = [];
+        List<ReportTextSection> sections = [new ReportTextSection(
+            SectionId: "basic-connection", Title: "기본 연결 설정", Content: _connectionBasicsSnapshot, CapturedAt: capturedAt)];
         HashSet<string> seen = new(StringComparer.Ordinal);
         foreach (TextBlock textBlock in EnumerateLogicalDescendants<TextBlock>(this))
         {

@@ -162,3 +162,20 @@ Write-Host 'Prerelease workflow contract validation passed.' `
 Write-Host "Default tag: $defaultTag"
 Write-Host "Canonical release notes: docs/$expectedNotesName"
 Write-Host 'Release branch watcher: scoped-prerelease-trigger.yml'
+
+# Public attachments must remain ZIP-only; local build compatibility artifacts
+# are deliberately checked separately by test-release-package.ps1.
+foreach ($file in @('manual-prerelease.yml', 'release.yml')) {
+    $source = Get-Content -LiteralPath (Join-Path $workflowRoot $file) -Raw
+    $start = $source.IndexOf('$assets = @(')
+    Assert-Condition -Condition ($start -ge 0) -Message "Missing public asset block: $file"
+    $public = $source.Substring($start)
+    $blocks = [regex]::Matches($public, '(?s)\$(?:assets|expected) = @\((.*?)\)')
+    Assert-Condition -Condition ($blocks.Count -ge 2) -Message "Missing upload/inventory gates: $file"
+    foreach ($block in $blocks) {
+        $names = [regex]::Matches($block.Groups[1].Value, "'([^']+)'")
+        Assert-Condition -Condition ($names.Count -eq 1) -Message "Public attachment set must contain one ZIP: $file"
+        Assert-Condition -Condition ($names[0].Groups[1].Value.EndsWith('WlanLivePathTester-win-x64-portable.zip')) -Message "Unexpected public attachment: $file"
+    }
+}
+Write-Host 'Public portable-only upload and inventory contracts passed.' -ForegroundColor Green

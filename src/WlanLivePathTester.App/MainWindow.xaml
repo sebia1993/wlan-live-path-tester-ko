@@ -4,6 +4,7 @@
         Title="WLAN Live Path Tester KO"
         Width="1280"
         Height="900"
+        FontSize="13"
         MinWidth="1080"
         MinHeight="700"
         WindowStartupLocation="CenterScreen"
@@ -37,15 +38,24 @@
         <TextBlock x:Name="GuidedTitle" FontSize="19" FontWeight="SemiBold" />
         <TextBlock x:Name="GuidedQuestion" Margin="0,6,0,0" TextWrapping="Wrap" />
         <TextBlock x:Name="GuidedLimitation" Margin="0,6,0,0" Foreground="#566573" TextWrapping="Wrap" />
+        <TextBlock x:Name="GuidedNextAction" TextWrapping="Wrap" Margin="0,8,0,0" FontWeight="SemiBold" />
         <WrapPanel x:Name="GuidedChoices" Margin="0,8,0,0" />
       </StackPanel>
     </Border>
     <StackPanel Grid.Row="1" Grid.RowSpan="2" Margin="0,16,12,0">
+      <TextBlock Text="어떤 문제가 있나요?" FontWeight="SemiBold" Margin="0,0,0,6" />
+      <ComboBox x:Name="GuidedSymptom" SelectionChanged="OnGuidedSymptomChanged" Margin="0,0,0,12" Padding="5" AutomationProperties.Name="장애 증상 선택">
+        <ComboBoxItem Content="증상을 선택하세요" />
+        <ComboBoxItem Content="Wi-Fi 연결이 안 됨" />
+        <ComboBoxItem Content="연결됐지만 인터넷 안 됨" />
+        <ComboBoxItem Content="연결은 되지만 느림" />
+        <ComboBoxItem Content="자주 끊김" />
+      </ComboBox>
       <TextBlock Text="무선 진단 순서" FontWeight="SemiBold" Margin="0,0,0,10" />
       <StackPanel x:Name="GuidedSteps">
         <Button Content="① 무선 연결 · L1/L2" Tag="0" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
-        <Button Content="② 실제 경로 · L3" Tag="1" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
-        <Button Content="③ 서비스 연결 · L4~7" Tag="2" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
+        <Button Content="② IP·실제 경로 · L3" Tag="1" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
+        <Button Content="③ 프록시·서비스 확인" Tag="2" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
         <Button Content="④ 성능 비교" Tag="3" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
         <Button Content="⑤ 결과·보고서" Tag="4" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
       </StackPanel>
@@ -203,19 +213,20 @@
           <StackPanel Margin="18">
             <Border Padding="13"
                     CornerRadius="8"
-                    Background="#FDEDEC"
-                    BorderBrush="#EC7063"
+                    Background="#EAF2F8"
+                    BorderBrush="#AED6F1"
                     BorderThickness="1">
-              <TextBlock Foreground="#922B21"
+              <TextBlock Foreground="#1F618D"
                          TextWrapping="Wrap"
-                         Text="측정 시작 버튼은 실제 HEAD/GET 네트워크 요청을 만듭니다. 다운로드 본문은 파일로 저장하지 않고 고정 버퍼에서 즉시 폐기합니다. 외부 업로드, POST, PUT, PATCH, DELETE는 수행하지 않습니다." />
+                         Text="시작 버튼을 누르면 지정한 파일을 내려받아 속도를 측정합니다. 수신 데이터는 저장하지 않습니다. 회사에서 승인한 측정 대상만 사용하세요." />
             </Border>
 
             <Border Margin="0,14,0,0"
                     Padding="16"
                     CornerRadius="9"
                     Background="White">
-              <StackPanel>
+              <Expander x:Name="MeasurementAdvancedSettings" Header="고급 측정 설정 · 기본값으로 시작할 수 있습니다" IsExpanded="False">
+<StackPanel>
                 <TextBlock FontSize="17"
                            FontWeight="SemiBold"
                            Text="공통 측정 설정" />
@@ -285,6 +296,7 @@
                   </StackPanel>
                 </Grid>
               </StackPanel>
+              </Expander>
             </Border>
 
             <Grid Margin="0,14,0,0">

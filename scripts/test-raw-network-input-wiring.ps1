@@ -65,7 +65,7 @@ Require $import '_routeComparisonInternalTargetV3?.Text ?? string.Empty' 'import
 Forbid $import '_routeComparisonExternalTargetV3?.Text.Trim()' 'proxy import target Trim'
 Forbid $import '_routeComparisonInternalTargetV3?.Text.Trim()' 'imported comparison internal Trim'
 
-Require $config 'TargetConfigurationFileReader.ReadStrictUtf8(_approvedTargetConfigurationPath)' 'approved target UI uses bounded strict file reader'
+Require $config 'TargetConfigurationFileReader.ReadStrictUtf8(configurationPath)' 'approved target UI uses bounded strict file reader'
 Forbid $config 'File.ReadAllText(' 'unbounded approved target file read'
 Forbid $config 'exception.Message' 'configuration error reflects arbitrary payload/path'
 

@@ -21,6 +21,9 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\WINDOWS_ROUTE_PROXY_IMPORT.md" Link="docs\WINDOWS_ROUTE_PROXY_IMPORT.md" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\ROUTE_COMPARISON_REPORT_EXPORT.md" Link="docs\ROUTE_COMPARISON_REPORT_EXPORT.md" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)..\..\docs\RELEASE_NOTES_0.1.0-alpha.12.md" Link="docs\RELEASE_NOTES_0.1.0-alpha.12.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
   <Target Name="ValidateObservationGuidesInPublish" AfterTargets="Publish">
     <Error Condition="!Exists('$(PublishDir)docs\WIRELESS_GUIDED_DIAGNOSTICS.md')" Text="Published output is missing WIRELESS_GUIDED_DIAGNOSTICS.md." />
     <Error Condition="!Exists('$(PublishDir)docs\RELEASE_NOTES_0.1.0-alpha.11.md')" Text="Published output is missing RELEASE_NOTES_0.1.0-alpha.11.md." />
