@@ -105,6 +105,8 @@ internal static class GuidedNavigationTests
                 for (int step = 0; step < 5; step++)
                 {
                     Ensure(window.NavigateGuidedStep(step), "Cannot render a missing stage.");
+                    if (step == 3) Ensure(Optional(window, "_approvedTargetStatusText") is TextBlock,
+                        "The rendered measurement page must contain the approved-profile picker.");
                     FrameworkElement root = (FrameworkElement)window.Content;
                     root.Measure(new Size(width, 800));
                     root.Arrange(new Rect(0, 0, width, 800));

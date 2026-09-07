@@ -38,7 +38,7 @@ public partial class MainWindow
 
     private void AddApprovedTargetPanel()
     {
-        TabControl? tabControl = FindVisualDescendant<TabControl>(this);
+        TabControl? tabControl = DiagnosticTabs;
         TabItem? measurementTab = tabControl?.Items
             .OfType<TabItem>()
             .FirstOrDefault(item => string.Equals(
