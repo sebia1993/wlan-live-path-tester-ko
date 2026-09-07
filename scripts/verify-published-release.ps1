@@ -134,12 +134,7 @@ $portableAssetName = 'WlanLivePathTester-win-x64-portable.zip'
 $singleAssetName = 'WlanLivePathTester-win-x64-single-file.exe'
 $checksumAssetName = 'SHA256SUMS.txt'
 $noticeAssetName = 'THIRD_PARTY_NOTICES.md'
-$expectedAssetNames = @(
-    $checksumAssetName,
-    $noticeAssetName,
-    $portableAssetName,
-    $singleAssetName
-) | Sort-Object
+$expectedAssetNames = @($portableAssetName)
 
 try {
     if (Test-Path -LiteralPath $resolvedDownloadRoot) {
@@ -195,7 +190,7 @@ try {
     Assert-Condition `
         -Condition (($remoteAssetNames -join '|') -ceq `
             ($expectedAssetNames -join '|')) `
-        -Message "Published release must contain exactly four approved assets. Actual: $($remoteAssetNames -join ', ')"
+        -Message "Published release must contain exactly one Portable ZIP. Actual: $($remoteAssetNames -join ', ')"
 
     Write-Host 'Downloading the published assets again...' `
         -ForegroundColor Cyan
@@ -261,46 +256,6 @@ try {
         Assert-Condition `
             -Condition ($localSize -eq $remoteSize) `
             -Message "Downloaded size differs from GitHub metadata: $name"
-    }
-
-    $checksumPath = Join-Path `
-        $resolvedDownloadRoot `
-        $checksumAssetName
-    $checksumLines = @(Get-Content -LiteralPath $checksumPath |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    Assert-Condition `
-        -Condition ($checksumLines.Count -eq 3) `
-        -Message 'SHA256SUMS.txt must contain exactly three asset hashes.'
-
-    $declaredHashes = @{}
-    foreach ($line in $checksumLines) {
-        $checksumMatch = [regex]::Match(
-            $line,
-            '^(?<hash>[0-9a-f]{64})  (?<name>[^\\/]+)$',
-            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
-        if (-not $checksumMatch.Success) {
-            throw "Invalid SHA256SUMS.txt line: $line"
-        }
-
-        $name = $checksumMatch.Groups['name'].Value
-        Assert-Condition `
-            -Condition (-not $declaredHashes.ContainsKey($name)) `
-            -Message "Duplicate checksum entry: $name"
-        $declaredHashes[$name] = $checksumMatch.Groups['hash'].Value
-    }
-
-    foreach ($assetName in @(
-        $portableAssetName,
-        $singleAssetName,
-        $noticeAssetName
-    )) {
-        Assert-Condition `
-            -Condition ($declaredHashes.ContainsKey($assetName)) `
-            -Message "SHA256SUMS.txt is missing: $assetName"
-        Assert-Condition `
-            -Condition ($declaredHashes[$assetName] -ceq `
-                $localHashes[$assetName]) `
-            -Message "SHA256SUMS.txt mismatch after publication: $assetName"
     }
 
     $tagRef = Invoke-GhJson -Arguments @(
@@ -435,31 +390,24 @@ try {
         -Condition ($buildInfo.Contains('SelfContained=true')) `
         -Message 'Published BUILD_INFO.txt does not identify a self-contained build.'
 
-    $singlePath = Join-Path `
-        $resolvedDownloadRoot `
-        $singleAssetName
-    Assert-Condition `
-        -Condition (Test-PeHeader -Path $singlePath) `
-        -Message 'Published single-file executable does not have an MZ header.'
     $productVersion = (Get-Item `
-        -LiteralPath $singlePath).VersionInfo.ProductVersion
+        -LiteralPath $portableExe).VersionInfo.ProductVersion
     Assert-Condition `
         -Condition (-not [string]::IsNullOrWhiteSpace($productVersion)) `
-        -Message 'Published single-file executable has no ProductVersion.'
+        -Message 'Published Portable executable has no ProductVersion.'
     Assert-Condition `
         -Condition ($productVersion.StartsWith(
             $version,
             [StringComparison]::OrdinalIgnoreCase)) `
         -Message "Published ProductVersion '$productVersion' does not start with '$version'."
 
-    $signature = Get-AuthenticodeSignature -LiteralPath $singlePath
+    $signature = Get-AuthenticodeSignature -LiteralPath $portableExe
     Write-Host "Authenticode status: $($signature.Status)" `
         -ForegroundColor Yellow
     Write-Host "Published release verification passed: $normalizedTag" `
         -ForegroundColor Green
     Write-Host "Tag commit: $tagCommitSha"
     Write-Host "Portable SHA-256: $($localHashes[$portableAssetName])"
-    Write-Host "Single EXE SHA-256: $($localHashes[$singleAssetName])"
 }
 finally {
     $shouldRemove = $createdTemporaryRoot `

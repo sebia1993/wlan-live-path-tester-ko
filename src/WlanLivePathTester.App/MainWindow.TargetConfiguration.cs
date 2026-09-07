@@ -25,12 +25,15 @@ public partial class MainWindow
 
     private void OnApprovedTargetConfigurationLoaded(object sender, RoutedEventArgs e)
     {
-        if (!_approvedTargetPanelAdded)
-        {
-            AddApprovedTargetPanel();
-            _approvedTargetPanelAdded = true;
-        }
+        EnsureApprovedTargetPanel();
         LoadApprovedTargetConfiguration();
+    }
+
+    internal void EnsureApprovedTargetPanel()
+    {
+        if (_approvedTargetPanelAdded) return;
+        AddApprovedTargetPanel();
+        _approvedTargetPanelAdded = _approvedTargetStatusText is not null;
     }
 
     private void AddApprovedTargetPanel()
@@ -49,7 +52,7 @@ public partial class MainWindow
         {
             Foreground = new SolidColorBrush(Color.FromRgb(86, 101, 115)),
             TextWrapping = TextWrapping.Wrap,
-            Text = "로컬 승인 대상 설정을 확인하고 있습니다."
+            Text = "승인 대상 파일을 선택하거나 아래에 승인된 고정 파일 URL을 입력하세요."
         };
         _approvedTargetStatusText = statusText;
         Button reloadButton = new()
@@ -67,7 +70,15 @@ public partial class MainWindow
         manualEntryCheckBox.Checked += OnManualTargetEntryChanged;
         manualEntryCheckBox.Unchecked += OnManualTargetEntryChanged;
         _manualTargetEntryCheckBox = manualEntryCheckBox;
-        StackPanel actions = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 11, 0, 0) };
+        WrapPanel actions = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 11, 0, 0) };
+        Button importButton = new() { Content = "승인 대상 파일 선택", Padding = new Thickness(10, 6, 10, 6), Margin = new Thickness(0, 0, 8, 0) };
+        importButton.Click += (_, _) =>
+        {
+            if (!CanNavigateGuided()) return;
+            Microsoft.Win32.OpenFileDialog dialog = new() { Title = "담당자가 제공한 승인 측정 대상 선택", Filter = "측정 대상 설정 (*.json)|*.json", CheckFileExists = true };
+            if (dialog.ShowDialog(this) == true) LoadApprovedTargetConfiguration(dialog.FileName);
+        };
+        actions.Children.Add(importButton);
         actions.Children.Add(reloadButton);
         actions.Children.Add(manualEntryCheckBox);
         StackPanel panelContent = new();
@@ -78,6 +89,7 @@ public partial class MainWindow
             Text = "로컬 승인 측정 대상"
         });
         panelContent.Children.Add(statusText);
+        panelContent.Children.Add(new TextBlock { Text = "파일 선택은 이 실행에만 적용됩니다. 자동 적용하려면 앱의 config/targets.local.json으로 준비하세요. 실제 주소가 담긴 파일은 외부로 공유하지 마세요.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
         panelContent.Children.Add(actions);
         Border panel = new()
         {
@@ -97,7 +109,8 @@ public partial class MainWindow
                 "측정 또는 브라우저 관찰이 진행 중입니다. 완료하거나 중지한 뒤 다시 불러오십시오.", true);
             return;
         }
-        LoadApprovedTargetConfiguration();
+        if (!CanNavigateGuided()) return;
+        LoadApprovedTargetConfiguration(_approvedTargetConfigurationPath);
     }
 
     private void OnManualTargetEntryChanged(object sender, RoutedEventArgs e)
@@ -111,23 +124,23 @@ public partial class MainWindow
         ApplyTargetEntryMode();
     }
 
-    private void LoadApprovedTargetConfiguration()
+    internal void LoadApprovedTargetConfiguration(string? selectedPath = null)
     {
-        _approvedTargets.Clear();
-        ApprovedTargetRuntimeCatalog.Clear();
-        _approvedTargetConfigurationPath = FindApprovedTargetConfiguration();
-        if (_approvedTargetConfigurationPath is null)
+        if (!CanNavigateGuided()) return;
+        EnsureApprovedTargetPanel();
+        string? configurationPath = selectedPath ?? FindApprovedTargetConfiguration();
+        if (configurationPath is null)
         {
             if (_manualTargetEntryCheckBox is not null) _manualTargetEntryCheckBox.IsChecked = true;
             ApplyTargetEntryMode();
             SetApprovedTargetStatus(
-                "targets.local.json이 없습니다. 현재는 임의 URL 직접 입력 모드입니다. 실제 사내 주소가 포함된 설정 파일은 Git에 커밋하지 마십시오.", false);
+                "준비 필요: 담당자가 제공한 승인 대상 JSON 파일을 선택하세요. 파일이 없다면 승인된 고정 다운로드 파일 URL을 아래에 입력하세요. 일반 홈페이지 주소는 성능 비교에 적합하지 않습니다.", false);
             return;
         }
 
         try
         {
-            string json = TargetConfigurationFileReader.ReadStrictUtf8(_approvedTargetConfigurationPath);
+            string json = TargetConfigurationFileReader.ReadStrictUtf8(configurationPath);
             IReadOnlyList<MeasurementTargetDefinition> targets = TargetConfigurationLoader.LoadFromJson(json);
             MeasurementTargetDefinition[] internalTargets = targets
                 .Where(target => target.PathKind == NetworkPathKind.Internal).ToArray();
@@ -148,6 +161,8 @@ public partial class MainWindow
                 throw new InvalidDataException(
                     "현재 화면에서는 모든 승인 대상이 동일한 maxBytes, timeoutSeconds, streams, maxRedirects 값을 사용해야 합니다.");
 
+            _approvedTargetConfigurationPath = configurationPath;
+            _approvedTargets.Clear();
             _approvedTargets.AddRange(targets);
             InternalTargetUrlTextBox.Text = internalTargets[0].Url;
             ExternalTargetUrlsTextBox.Text = string.Join(Environment.NewLine, externalTargets.Select(target => target.Url));
@@ -164,12 +179,8 @@ public partial class MainWindow
         }
         catch (Exception exception)
         {
-            _approvedTargets.Clear();
-            ApprovedTargetRuntimeCatalog.Clear();
-            if (_manualTargetEntryCheckBox is not null) _manualTargetEntryCheckBox.IsChecked = true;
-            ApplyTargetEntryMode();
             SetApprovedTargetStatus(
-                $"승인 대상 설정을 사용할 수 없어 직접 입력 모드로 전환했습니다. 오류 유형: {exception.GetType().Name}. 설정 경로와 원문은 표시하지 않았습니다.",
+                $"파일을 불러오지 못했습니다. 기존 대상과 입력은 유지했습니다. 오류 유형: {exception.GetType().Name}. 설정 경로와 원문은 표시하지 않았습니다.",
                 true);
         }
     }

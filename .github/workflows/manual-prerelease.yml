@@ -223,10 +223,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $assets = @(
-              '.\artifacts\release\WlanLivePathTester-win-x64-portable.zip',
-              '.\artifacts\release\WlanLivePathTester-win-x64-single-file.exe',
-              '.\artifacts\release\SHA256SUMS.txt',
-              '.\artifacts\release\THIRD_PARTY_NOTICES.md'
+              '.\artifacts\release\WlanLivePathTester-win-x64-portable.zip'
           )
           gh release create $env:RELEASE_TAG `
               --repo $env:GITHUB_REPOSITORY `
@@ -258,10 +255,7 @@ jobs:
 
           $names = @($release.assets | ForEach-Object { $_.name } | Sort-Object)
           $expected = @(
-              'SHA256SUMS.txt',
-              'THIRD_PARTY_NOTICES.md',
-              'WlanLivePathTester-win-x64-portable.zip',
-              'WlanLivePathTester-win-x64-single-file.exe'
+              'WlanLivePathTester-win-x64-portable.zip'
           ) | Sort-Object
           if (($names -join '|') -ne ($expected -join '|')) {
               throw "Unexpected draft assets: $($names -join ', ')"
@@ -320,10 +314,7 @@ jobs:
               Select-Object -ExpandProperty Name |
               Sort-Object)
           $expected = @(
-              'SHA256SUMS.txt',
-              'THIRD_PARTY_NOTICES.md',
-              'WlanLivePathTester-win-x64-portable.zip',
-              'WlanLivePathTester-win-x64-single-file.exe'
+              'WlanLivePathTester-win-x64-portable.zip'
           ) | Sort-Object
           if (($actual -join '|') -ne ($expected -join '|')) {
               throw "Unexpected downloaded assets: $($actual -join ', ')"
@@ -343,46 +334,13 @@ jobs:
               }
           }
 
-          $checksumPath = Join-Path $directory 'SHA256SUMS.txt'
-          $lines = @(Get-Content -LiteralPath $checksumPath |
-              Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-          if ($lines.Count -ne 3) {
-              throw 'Downloaded SHA256SUMS.txt must contain exactly three hashes.'
-          }
-
-          $expectedHashes = @{}
-          foreach ($line in $lines) {
-              $match = [regex]::Match(
-                  $line,
-                  '^(?<hash>[0-9a-f]{64})  (?<name>[^\\/]+)$',
-                  [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
-              if (-not $match.Success) {
-                  throw "Invalid downloaded checksum line: $line"
-              }
-
-              $name = $match.Groups['name'].Value
-              if ($expectedHashes.ContainsKey($name)) {
-                  throw "Duplicate downloaded checksum entry: $name"
-              }
-              $expectedHashes[$name] = $match.Groups['hash'].Value
-          }
-
-          $hashedAssets = @(
-              'WlanLivePathTester-win-x64-portable.zip',
-              'WlanLivePathTester-win-x64-single-file.exe',
-              'THIRD_PARTY_NOTICES.md'
-          )
-          foreach ($name in $hashedAssets) {
-              if (-not $expectedHashes.ContainsKey($name)) {
-                  throw "Downloaded checksum is missing: $name"
-              }
-              $actualHash = (Get-FileHash `
-                  -LiteralPath (Join-Path $directory $name) `
-                  -Algorithm SHA256).Hash.ToLowerInvariant()
-              if ($actualHash -ne $expectedHashes[$name]) {
-                  throw "Downloaded asset checksum mismatch: $name"
-              }
-          }
+          # The only published asset is the ZIP. Match its downloaded bytes to
+          # the locally verified build, then verify GitHub's digest below.
+          $metadata = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to read asset digest.' }
+          $asset = @($metadata.assets)[0]
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath (Join-Path $directory 'WlanLivePathTester-win-x64-portable.zip') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($asset.digest -cne $digest) { throw 'Published ZIP digest mismatch.' }
 
           $release = gh release view $env:RELEASE_TAG `
               --repo $env:GITHUB_REPOSITORY `
@@ -480,9 +438,9 @@ jobs:
           - Tag: `$env:RELEASE_TAG`
           - Commit: `$env:RELEASE_COMMIT_SHA`
           - Release: $env:RELEASE_URL
-          - Assets: exactly four
+          - Assets: one Portable ZIP
           - Published bytes: match locally verified files
-          - SHA-256: verified from downloaded `SHA256SUMS.txt`
+          - SHA-256: verified against local build and GitHub asset digest
           - Portable ZIP documents: verified
           - BUILD_INFO version and source revision: verified
           "@

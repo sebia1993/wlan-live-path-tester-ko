@@ -81,6 +81,7 @@ public partial class MainWindow
         buttons.Children.Add(new Border { Width = 10 });
         buttons.Children.Add(_openLatestReportButton);
         StackPanel content = new();
+        content.Children.Add(CreateBeginnerSummaryPanel());
         content.Children.Add(new TextBlock
         {
             FontSize = 22, FontWeight = FontWeights.SemiBold, Text = "로컬 진단 보고서"
@@ -204,7 +205,8 @@ public partial class MainWindow
 
     private IReadOnlyList<ReportTextSection> CaptureMeasurementTexts(DateTimeOffset capturedAt)
     {
-        List<ReportTextSection> sections = [];
+        List<ReportTextSection> sections = [new ReportTextSection(
+            SectionId: "basic-connection", Title: "기본 연결 설정", Content: _connectionBasicsSnapshot, CapturedAt: capturedAt)];
         HashSet<string> seen = new(StringComparer.Ordinal);
         foreach (TextBlock textBlock in EnumerateLogicalDescendants<TextBlock>(this))
         {
