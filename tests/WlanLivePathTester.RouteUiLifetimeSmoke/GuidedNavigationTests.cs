@@ -50,7 +50,7 @@ internal static class GuidedNavigationTests
             release.SetResult("fixture: gateway configured; reachability untested");
             await run;
             Ensure(window.NavigateGuidedStep(4), "Results should be available without saving.");
-            Ensure(window.RenderBeginnerSummary().Contains("fixture: gateway"), "Local evidence must be retained in the preview.");
+            Ensure(Field<TextBlock>(window, "_beginnerConnectionDetails").Text.Contains("fixture: gateway"), "Local evidence must be retained in the preview.");
             Ensure(Optional(window, "_lastReportDirectory") is null, "Preview must not save a report.");
         }
         finally { release.TrySetResult("released"); window.Close(); }

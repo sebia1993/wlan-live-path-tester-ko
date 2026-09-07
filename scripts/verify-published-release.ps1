@@ -134,7 +134,11 @@ $portableAssetName = 'WlanLivePathTester-win-x64-portable.zip'
 $singleAssetName = 'WlanLivePathTester-win-x64-single-file.exe'
 $checksumAssetName = 'SHA256SUMS.txt'
 $noticeAssetName = 'THIRD_PARTY_NOTICES.md'
-$expectedAssetNames = @($portableAssetName)
+# Older immutable releases retain their original four-asset contract.
+$legacyAssets = $version -match '^0\.1\.0-alpha\.(?<sequence>[0-9]+)$' -and [int]$Matches['sequence'] -le 11
+$expectedAssetNames = if ($legacyAssets) {
+    @($checksumAssetName, $noticeAssetName, $portableAssetName, $singleAssetName) | Sort-Object
+} else { @($portableAssetName) }
 
 try {
     if (Test-Path -LiteralPath $resolvedDownloadRoot) {
@@ -190,7 +194,7 @@ try {
     Assert-Condition `
         -Condition (($remoteAssetNames -join '|') -ceq `
             ($expectedAssetNames -join '|')) `
-        -Message "Published release must contain exactly one Portable ZIP. Actual: $($remoteAssetNames -join ', ')"
+        -Message "Published release asset set does not match its version contract. Actual: $($remoteAssetNames -join ', ')"
 
     Write-Host 'Downloading the published assets again...' `
         -ForegroundColor Cyan
@@ -256,6 +260,49 @@ try {
         Assert-Condition `
             -Condition ($localSize -eq $remoteSize) `
             -Message "Downloaded size differs from GitHub metadata: $name"
+    }
+
+    if ($legacyAssets) {
+    $checksumPath = Join-Path `
+        $resolvedDownloadRoot `
+        $checksumAssetName
+    $checksumLines = @(Get-Content -LiteralPath $checksumPath |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    Assert-Condition `
+        -Condition ($checksumLines.Count -eq 3) `
+        -Message 'SHA256SUMS.txt must contain exactly three asset hashes.'
+
+    $declaredHashes = @{}
+    foreach ($line in $checksumLines) {
+        $checksumMatch = [regex]::Match(
+            $line,
+            '^(?<hash>[0-9a-f]{64})  (?<name>[^\\/]+)$',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        if (-not $checksumMatch.Success) {
+            throw "Invalid SHA256SUMS.txt line: $line"
+        }
+
+        $name = $checksumMatch.Groups['name'].Value
+        Assert-Condition `
+            -Condition (-not $declaredHashes.ContainsKey($name)) `
+            -Message "Duplicate checksum entry: $name"
+        $declaredHashes[$name] = $checksumMatch.Groups['hash'].Value
+    }
+
+    foreach ($assetName in @(
+        $portableAssetName,
+        $singleAssetName,
+        $noticeAssetName
+    )) {
+        Assert-Condition `
+            -Condition ($declaredHashes.ContainsKey($assetName)) `
+            -Message "SHA256SUMS.txt is missing: $assetName"
+        Assert-Condition `
+            -Condition ($declaredHashes[$assetName] -ceq `
+                $localHashes[$assetName]) `
+            -Message "SHA256SUMS.txt mismatch after publication: $assetName"
+    }
+
     }
 
     $tagRef = Invoke-GhJson -Arguments @(
@@ -390,6 +437,14 @@ try {
         -Condition ($buildInfo.Contains('SelfContained=true')) `
         -Message 'Published BUILD_INFO.txt does not identify a self-contained build.'
 
+    if ($legacyAssets) {
+    $singlePath = Join-Path `
+        $resolvedDownloadRoot `
+        $singleAssetName
+    Assert-Condition `
+        -Condition (Test-PeHeader -Path $singlePath) `
+        -Message 'Published single-file executable does not have an MZ header.'
+    }
     $productVersion = (Get-Item `
         -LiteralPath $portableExe).VersionInfo.ProductVersion
     Assert-Condition `

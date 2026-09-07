@@ -16,6 +16,7 @@ public partial class MainWindow
 {
     private TextBlock? _connectionBasicsText;
     private TextBlock? _beginnerSummaryText;
+    private TextBlock? _beginnerConnectionDetails;
     private string _connectionBasicsSnapshot = "미실행 — IP·게이트웨이·DNS 설정을 아직 확인하지 않았습니다.";
     private bool _changingSymptom;
     private int _selectedSymptom;
@@ -88,7 +89,10 @@ public partial class MainWindow
             GuidedChoices.Children.Add(measure);
         }
         if (_guidedStep == 4 && _beginnerSummaryText is not null)
+        {
             _beginnerSummaryText.Text = RenderBeginnerSummary();
+            if (_beginnerConnectionDetails is not null) _beginnerConnectionDetails.Text = _connectionBasicsSnapshot;
+        }
     }
 
     private void AddConnectionCheckChoice()
@@ -122,7 +126,8 @@ public partial class MainWindow
     {
         StringBuilder text = new();
         text.AppendLine("관찰된 결과");
-        text.AppendLine(_connectionBasicsSnapshot);
+        text.AppendLine(_connectionBasicsSnapshot.StartsWith("미실행", StringComparison.Ordinal)
+            ? _connectionBasicsSnapshot : "기본 연결 설정 기록 있음 — 아래 상세에서 수집 시각과 주의 항목을 확인하세요.");
         var results = MeasurementResultHistory.Snapshot();
         var latest = results.GroupBy(r => r.PathKind).Select(g => g.OrderByDescending(r => r.CompletedAt).First()).ToArray();
         text.AppendLine("\n서비스 응답 · 내부/외부 각각의 최근 측정");
@@ -143,6 +148,10 @@ public partial class MainWindow
     private UIElement CreateBeginnerSummaryPanel()
     {
         _beginnerSummaryText = new() { Text = RenderBeginnerSummary(), TextWrapping = TextWrapping.Wrap };
-        return new Border { Padding = new Thickness(14), Margin = new Thickness(0, 0, 0, 16), Background = Brushes.AliceBlue, Child = _beginnerSummaryText };
+        _beginnerConnectionDetails = new() { Text = _connectionBasicsSnapshot, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        StackPanel content = new();
+        content.Children.Add(_beginnerSummaryText);
+        content.Children.Add(new Expander { Header = "기본 연결 상세 보기", Margin = new Thickness(0, 12, 0, 0), Content = _beginnerConnectionDetails });
+        return new Border { Padding = new Thickness(14), Margin = new Thickness(0, 0, 0, 16), Background = Brushes.AliceBlue, Child = content };
     }
 }
