@@ -88,6 +88,14 @@ public partial class MainWindow
             AddGuidedChoice("단일 측정·대상 설정", "내부 · 외부 다운로드 측정");
             AddGuidedChoice("반복 측정", "반복 측정");
             AddGuidedChoice("브라우저 관찰", "브라우저 관찰");
+            Button wiredGuide = new() { Content = "유선과 비교하는 방법", Padding = new Thickness(9, 5, 9, 5) };
+            wiredGuide.Click += (_, _) => GuidedLimitation.Text =
+                "1. Wi-Fi에서 동일 대상·조건으로 측정하고 보고서를 저장하세요. " +
+                "2. 측정이 끝난 뒤 유선 연결을 준비하고 실제 경로 단계에서 Ethernet 경로를 확인하세요. " +
+                "3. 같은 대상·조건으로 다시 측정하고 별도 보고서를 저장하세요. " +
+                "4. 시각·서버·캐시·VPN 조건 차이를 함께 비교하세요. 앱은 어댑터나 경로를 자동 변경하지 않습니다. " +
+                "보고서에는 이전 측정도 포함될 수 있으므로 각 측정 시각으로 구분하세요.";
+            GuidedChoices.Children.Add(wiredGuide);
         }
         foreach (Button button in GuidedSteps.Children.OfType<Button>())
         {

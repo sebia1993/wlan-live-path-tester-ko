@@ -9,11 +9,26 @@ internal static class GuidedNavigationTests
 {
     internal static readonly (string Name, Func<Task> Run)[] Cases =
     [
+        ("guided report distinguishes absent measurement evidence from health", ReportSummaryAsync),
         ("guided production layouts render at supported window sizes", RenderAsync),
         ("guided stages reuse production tools without starting collectors", StagesAsync),
         ("guided navigation cannot escape a running diagnostic lease", BusyAsync),
         ("guided and advanced views preserve inputs and separate wireless from proxy", AdvancedAsync)
     ];
+
+    private static Task ReportSummaryAsync()
+    {
+        var report = WlanLivePathTester.UnifiedReportSmoke.Fixtures.Report() with { StructuredMeasurements = [] };
+        string summary = WlanLivePathTester.Core.Reporting.GuidedReportSummary.Render(report);
+        Ensure(summary.Contains("미실행 — HTTP 측정 결과 없음", StringComparison.Ordinal)
+            && summary.Contains("미실행 — 내부·외부 속도를 판단하지 않음", StringComparison.Ordinal),
+            "Absent tests must never become a healthy service or throughput verdict.");
+        report = report with { Wlan = report.Wlan with { IsConnected = false } };
+        summary = WlanLivePathTester.Core.Reporting.GuidedReportSummary.Render(report);
+        Ensure(summary.Contains("판단 불가 — 무선 연결 정보를 확보하지 못함", StringComparison.Ordinal),
+            "Unavailable WLAN information must not assert a proven disconnection cause.");
+        return Task.CompletedTask;
+    }
 
     private static Task RenderAsync()
     {

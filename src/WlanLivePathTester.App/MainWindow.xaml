@@ -8,7 +8,7 @@
         MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="#F4F6F8">
-  <Grid Margin="20">
+  <Grid Margin="20" Background="#F4F6F8">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="210" />
       <ColumnDefinition Width="*" />

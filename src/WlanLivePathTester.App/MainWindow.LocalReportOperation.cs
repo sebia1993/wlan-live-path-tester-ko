@@ -55,6 +55,7 @@ public partial class MainWindow
             saved = true;
             StringBuilder builder = new();
             builder.AppendLine("로컬 보고서 생성 완료");
+            builder.AppendLine(GuidedReportSummary.Render(report));
             builder.AppendLine($"폴더: {export.OutputDirectory}");
             builder.AppendLine($"JSON: {Path.GetFileName(export.JsonPath)}");
             builder.AppendLine($"CSV: {Path.GetFileName(export.CsvPath)}");
