@@ -5,6 +5,7 @@ using System.Windows.Media;
 using WlanLivePathTester.Core.NetworkEnvironment;
 using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Core.Routing;
+using WlanLivePathTester.Core.Security;
 using WlanLivePathTester.Windows.Routing;
 
 namespace WlanLivePathTester.App;
@@ -163,7 +164,7 @@ public partial class MainWindow
     {
         if (_applicationOperationWindowClosed || CurrentApplicationOperation.IsBusy
             || _routeEvidenceTargetTextBox is null || _routeEvidencePurposeComboBox is null) return;
-        _routeEvidenceTargetTextBox.Text = InternalTargetUrlTextBox.Text.Trim();
+        _routeEvidenceTargetTextBox.Text = InternalTargetUrlTextBox.Text;
         SelectRoutePurpose(RouteProbePurpose.InternalDirectTarget);
     }
 
@@ -171,9 +172,13 @@ public partial class MainWindow
     {
         if (_applicationOperationWindowClosed || CurrentApplicationOperation.IsBusy
             || _routeEvidenceTargetTextBox is null || _routeEvidencePurposeComboBox is null) return;
-        string? firstExternal = ExternalTargetUrlsTextBox.Text
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
-        _routeEvidenceTargetTextBox.Text = firstExternal ?? string.Empty;
+        if (!NetworkInputBoundary.TryHttpUrlLines(ExternalTargetUrlsTextBox.Text,
+                out string[] urls, out string error))
+        {
+            SetRouteEvidenceResult($"입력 오류: {error}", Brushes.DarkRed);
+            return;
+        }
+        _routeEvidenceTargetTextBox.Text = urls[0];
         SelectRoutePurpose(RouteProbePurpose.ExternalTargetReference);
     }
 
@@ -187,7 +192,7 @@ public partial class MainWindow
             || _routeEvidenceTargetTextBox is null || _routeEvidencePurposeComboBox is null
             || _analyzeRouteEvidenceButton is null || _cancelRouteEvidenceButton is null)
             return Task.FromResult(false);
-        string target = _routeEvidenceTargetTextBox.Text.Trim();
+        string target = _routeEvidenceTargetTextBox.Text;
         RouteProbePurpose purpose = GetSelectedRoutePurpose();
         var collect = CollectRouteEvidence;
         return RunLocalDiagnosticAsync(
@@ -329,8 +334,6 @@ public partial class MainWindow
         if (_cancelRouteEvidenceButton is not null) _cancelRouteEvidenceButton.Click -= OnCancelRouteEvidenceClick;
         if (_useInternalRouteTargetButton is not null) _useInternalRouteTargetButton.Click -= OnUseInternalRouteTargetClick;
         if (_useExternalRouteTargetButton is not null) _useExternalRouteTargetButton.Click -= OnUseExternalRouteTargetClick;
-        // CancellationTokenSource ownership stays with the awaited common
-        // runner; Closed must never dispose a token still used by a reader.
         Closed -= OnRouteEvidenceWindowClosed;
     }
 }
