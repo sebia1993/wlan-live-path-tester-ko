@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $solution = Join-Path $root 'WlanLivePathTester.sln'
 $tests = @(
+    'tests\WlanLivePathTester.InputBoundarySmoke\WlanLivePathTester.InputBoundarySmoke.csproj',
     'tests\WlanLivePathTester.SelfTest\WlanLivePathTester.SelfTest.csproj',
     'tests\WlanLivePathTester.WindowsSmoke\WlanLivePathTester.WindowsSmoke.csproj',
     'tests\WlanLivePathTester.ProxyAuthSmoke\WlanLivePathTester.ProxyAuthSmoke.csproj',
