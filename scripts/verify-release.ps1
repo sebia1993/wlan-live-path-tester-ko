@@ -56,6 +56,10 @@ try {
         powershell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'scripts\test-route-report-save-ui-contract.ps1')
     }
+    Invoke-CheckedCommand -Description 'Validate raw network input wiring contract' -Command {
+        powershell -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $root 'scripts\test-raw-network-input-wiring.ps1')
+    }
     Invoke-CheckedCommand -Description 'Validate diagnostic guide package negative cases' -Command {
         powershell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'scripts\test-diagnostic-guide-package-cases.ps1')
@@ -65,9 +69,6 @@ try {
         dotnet build $solution -c $Configuration --no-restore
     }
 
-    # Run the remaining independent suites after a failure to expose regressions
-    # together. This is NOT continue-on-error: any failed/missing suite still
-    # causes this script to throw before release package creation can begin.
     $failures = [System.Collections.Generic.List[string]]::new()
     $passedCount = 0
     foreach ($relativeProject in $tests) {
