@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeApplicationOperations();
+        InitializeGuidedNavigation();
     }
 
     private async void OnResolveProxyRouteClick(object sender, RoutedEventArgs e)

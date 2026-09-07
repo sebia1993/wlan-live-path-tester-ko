@@ -29,7 +29,7 @@ internal static class Program
     {
         await Task.Yield();
         var cases = RouteTests.Cases.Concat(ReportTests.Cases).Concat(BasicTests.Cases)
-            .Concat(ReportFailureIsolationTests.Cases).ToArray();
+            .Concat(ReportFailureIsolationTests.Cases).Concat(GuidedNavigationTests.Cases).ToArray();
         foreach ((string name, Func<Task> run) in cases)
         {
             await run().WaitAsync(TimeSpan.FromSeconds(15));

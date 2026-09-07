@@ -2,13 +2,17 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WLAN Live Path Tester KO"
-        Width="1120"
+        Width="1280"
         Height="900"
-        MinWidth="900"
+        MinWidth="1080"
         MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="#F4F6F8">
-  <Grid Margin="24">
+  <Grid Margin="20" Background="#F4F6F8">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="210" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
@@ -16,7 +20,7 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <StackPanel>
+    <StackPanel Grid.ColumnSpan="2">
       <TextBlock FontSize="28"
                  FontWeight="SemiBold"
                  Foreground="#17202A"
@@ -24,33 +28,49 @@
       <TextBlock Margin="0,7,0,0"
                  FontSize="14"
                  Foreground="#566573"
-                 Text="무선 링크·내부망 DIRECT·회사 프록시 경유 외부망을 분리하는 Windows 로컬 진단 도구" />
+                 Text="무선 연결부터 서비스 성능까지, 근거를 따라 점검합니다" />
     </StackPanel>
 
-    <Border Grid.Row="1"
-            Margin="0,18,0,0"
-            Padding="14"
-            CornerRadius="9"
-            Background="#EAF2F8"
-            BorderBrush="#5DADE2"
-            BorderThickness="1">
-      <TextBlock Foreground="#1B4F72"
-                 TextWrapping="Wrap"
-                 Text="M3·M4 다운로드 측정 단계 · 프로그램 시작만으로 네트워크 요청을 만들지 않습니다. PAC/WPAD 확인과 HEAD/GET 다운로드는 사용자가 해당 버튼을 눌렀을 때만 실행됩니다." />
+    <Border Grid.Row="1" Grid.Column="1" Margin="12,16,0,10" Padding="14"
+            Background="#EAF2F8" CornerRadius="8">
+      <StackPanel>
+        <TextBlock x:Name="GuidedTitle" FontSize="19" FontWeight="SemiBold" />
+        <TextBlock x:Name="GuidedQuestion" Margin="0,6,0,0" TextWrapping="Wrap" />
+        <TextBlock x:Name="GuidedLimitation" Margin="0,6,0,0" Foreground="#566573" TextWrapping="Wrap" />
+        <WrapPanel x:Name="GuidedChoices" Margin="0,8,0,0" />
+      </StackPanel>
     </Border>
-
-    <TabControl Grid.Row="2" Margin="0,18,0,0">
+    <StackPanel Grid.Row="1" Grid.RowSpan="2" Margin="0,16,12,0">
+      <TextBlock Text="무선 진단 순서" FontWeight="SemiBold" Margin="0,0,0,10" />
+      <StackPanel x:Name="GuidedSteps">
+        <Button Content="① 무선 연결 · L1/L2" Tag="0" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
+        <Button Content="② 실제 경로 · L3" Tag="1" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
+        <Button Content="③ 서비스 연결 · L4~7" Tag="2" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
+        <Button Content="④ 성능 비교" Tag="3" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
+        <Button Content="⑤ 결과·보고서" Tag="4" Click="OnGuidedStepClick" Padding="10,12" Margin="0,0,0,7" HorizontalContentAlignment="Left" />
+      </StackPanel>
+      <TextBlock Text="번호는 점검 순서입니다. 다른 단계로 이동해도 검사는 자동 실행되지 않습니다." TextWrapping="Wrap" Foreground="#566573" Margin="0,12,0,16" />
+      <CheckBox x:Name="GuidedAdvanced" Content="고급: 전체 도구 보기" Checked="OnGuidedAdvancedChanged" Unchecked="OnGuidedAdvancedChanged" />
+      <ComboBox x:Name="GuidedAdvancedTools" Visibility="Collapsed" Margin="0,10,0,0" SelectionChanged="OnGuidedToolChanged" AutomationProperties.Name="전체 진단 도구" />
+      <TextBlock Text="외부 측정과 PAC/WPAD 조회는 해당 실행 버튼을 누를 때만 시작합니다." TextWrapping="Wrap" Foreground="#566573" Margin="0,16,0,0" />
+    </StackPanel>
+    <TabControl x:Name="DiagnosticTabs" Grid.Row="2" Grid.Column="1" Margin="12,0,0,0">
+      <TabControl.Template>
+        <ControlTemplate TargetType="TabControl">
+          <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" />
+        </ControlTemplate>
+      </TabControl.Template>
       <TabItem Header="WLAN · 프록시">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
-            <Grid>
+            <Grid x:Name="BasicDiagnosticPanels">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="16" />
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
 
-              <Border Grid.Column="0"
+              <Border x:Name="GuidedWlanPanel" Grid.Column="0"
                       Padding="18"
                       CornerRadius="9"
                       Background="White">
@@ -62,13 +82,13 @@
                   <TextBlock Margin="0,7,0,0"
                              Foreground="#707B7C"
                              TextWrapping="Wrap"
-                             Text="Native WLAN API로 SSID, BSSID, RSSI, 채널, PHY와 Rx/Tx 링크 속도를 읽습니다. 외부 통신은 없습니다." />
+                             Text="연결된 Wi-Fi 이름과 AP, 신호 세기, 채널, 링크 속도를 확인합니다. 외부 사이트에는 접속하지 않습니다." />
                   <Button Width="170"
                           Margin="0,14,0,0"
                           Padding="10,7"
                           HorizontalAlignment="Left"
                           Click="OnReadWlanStatusClick"
-                          Content="현재 WLAN 확인" />
+                          Content="무선 진단 시작" />
                   <TextBlock x:Name="WlanResultText"
                              Margin="0,12,0,0"
                              FontFamily="Consolas"
@@ -78,7 +98,7 @@
                 </StackPanel>
               </Border>
 
-              <Border Grid.Column="2"
+              <Border x:Name="GuidedProxyPanel" Grid.Column="2"
                       Padding="18"
                       CornerRadius="9"
                       Background="White">
@@ -107,7 +127,7 @@
               </Border>
             </Grid>
 
-            <Border Margin="0,16,0,0"
+            <Border x:Name="GuidedProxyRoutePanel" Margin="0,16,0,0"
                     Padding="18"
                     CornerRadius="9"
                     Background="White">
@@ -410,7 +430,7 @@
       </TabItem>
     </TabControl>
 
-    <TextBlock Grid.Row="3"
+    <TextBlock Grid.Row="3" Grid.ColumnSpan="2"
                Margin="0,12,0,0"
                Foreground="#7B7D7D"
                TextWrapping="Wrap"

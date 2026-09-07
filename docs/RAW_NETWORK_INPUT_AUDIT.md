@@ -1,4 +1,12 @@
-# 네트워크 원문 입력 감사 — 작업 중
+# 네트워크 원문 입력 감사 — 검증 기록
+
+## 최신 검증 및 병합 (2026-09-07)
+
+PR #130 소스 `fd8c047e4c827b11278a2ff40f6bd54a461c5eb7`은 Windows CI `34096879339`, Guide `34096879388`, Package `34096879400`에서 성공했습니다. 패키지 로그의 입력 검사는 27그룹·1820 raw matrix assertions·0실패이며 전체 13/13 suite와 패키지 생성·검사가 성공했습니다. main 병합은 `000ec4a`입니다.
+
+공통 helper의 이전 실패 네 그룹과 App 단일/반복 URL·경로·설정 파일 읽기 연결을 보완했습니다. `scripts/test-raw-network-input-wiring.ps1`이 해당 운영 연결을 검사합니다. 아래는 이전 revision의 실패 이력이며 현재 상태가 아닙니다. 공개 Release 게시 및 회사 실환경 검증은 이 병합에 포함하지 않습니다.
+
+## 이전 revision 감사 이력
 
 기반 main: `6870775fc257c73b43bfdcc26ecc50916d1a0acf`.
 작업 브랜치: `fix/raw-network-input-boundaries`, 초안 PR #130.

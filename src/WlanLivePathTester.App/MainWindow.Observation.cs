@@ -297,6 +297,8 @@ public partial class MainWindow
             }
 
             builder.AppendLine($"RSSI: {(sample.RssiDbm is int rssi ? $"{rssi} dBm" : "확인 불가")} · BSSID 변경: {(sample.BssidChanged ? "있음" : "없음")}");
+            builder.AppendLine($"PHY Rx: {FormatLinkSpeed(sample.ReceiveLinkSpeedBps)} · Tx: {FormatLinkSpeed(sample.TransmitLinkSpeedBps)} (실제 수신량과 다름)");
+            builder.AppendLine($"표본 시각: {sample.Timestamp.ToLocalTime():HH:mm:ss} · BSSID 변경과 속도 저하의 동시 관찰만으로 원인을 확정하지 않습니다.");
             if (!string.IsNullOrWhiteSpace(sample.Note))
             {
                 builder.AppendLine($"관찰 메모: {sample.Note}");
