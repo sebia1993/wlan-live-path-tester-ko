@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 using System.Text.Json;
@@ -5,7 +6,9 @@ using WlanLivePathTester.Core.Configuration;
 using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Core.Proxy;
 using WlanLivePathTester.Core.Security;
+using WlanLivePathTester.Core.Routing;
 using WlanLivePathTester.Windows.Http;
+using WlanLivePathTester.Windows.Routing;
 
 namespace WlanLivePathTester.InputBoundarySmoke;
 
@@ -46,7 +49,8 @@ internal static class Program
             ("safe parser JSON and error messages exclude input payload", Privacy),
             ("WinHTTP rejects invalid raw requests before proxy lookup", TransportAdmission),
             ("explicit proxy endpoint rejects invalid syntax before connection", ExplicitProxyAdmission),
-            ("cancellation retains the pre-request no-I/O path", PreCanceled)
+            ("cancellation retains the pre-request no-I/O path", PreCanceled),
+            ("local route reader preserves raw input and pre-cancellation", LocalRouteAdmission)
         ];
         foreach ((string name, Action test) in tests)
         {
@@ -229,12 +233,12 @@ internal static class Program
     {
         string original = Config(Url);
         foreach (string json in new[]
-                 {
-                     original.Replace("\"schemaVersion\":1", "\"schemaVersion\":1,\"SchemaVersion\":1", StringComparison.Ordinal),
-                     original.Replace("\"url\":", "\"URL\":\"https://other.example.invalid/\",\"url\":", StringComparison.Ordinal),
-                     original.Replace("\"url\":", "\"\\u0075rl\":\"https://other.example.invalid/\",\"url\":", StringComparison.Ordinal),
-                     original.Replace("\"schemaVersion\":1", "\"enforceApprovedTargets\":true,\"enforceApprovedTargets\":false,\"schemaVersion\":1", StringComparison.Ordinal)
-                 })
+        {
+            original.Replace("\"schemaVersion\":1", "\"schemaVersion\":1,\"SchemaVersion\":1", StringComparison.Ordinal),
+            original.Replace("\"url\":", "\"URL\":\"https://other.example.invalid/\",\"url\":", StringComparison.Ordinal),
+            original.Replace("\"url\":", "\"\\u0075rl\":\"https://other.example.invalid/\",\"url\":", StringComparison.Ordinal),
+            original.Replace("\"schemaVersion\":1", "\"enforceApprovedTargets\":true,\"enforceApprovedTargets\":false,\"schemaVersion\":1", StringComparison.Ordinal)
+        })
             Throws<JsonException>(() => TargetConfigurationLoader.LoadWithPolicyFromJson(json));
     }
 
@@ -349,14 +353,14 @@ internal static class Program
     private static void TransportAdmission()
     {
         foreach (WinHttpRequestOptions options in new[]
-                 {
-                     new WinHttpRequestOptions(Url + "\t", NetworkPathKind.External),
-                     new WinHttpRequestOptions(Url + "%0d", NetworkPathKind.External),
-                     new WinHttpRequestOptions("ftp://example.invalid/file", NetworkPathKind.External),
-                     new WinHttpRequestOptions(Url, (NetworkPathKind)999),
-                     new WinHttpRequestOptions(Url, NetworkPathKind.External, (WinHttpRequestMethod)999),
-                     new WinHttpRequestOptions(Url, NetworkPathKind.External, TimeoutMilliseconds: 999)
-                 })
+        {
+            new WinHttpRequestOptions(Url + "\t", NetworkPathKind.External),
+            new WinHttpRequestOptions(Url + "%0d", NetworkPathKind.External),
+            new WinHttpRequestOptions("ftp://example.invalid/file", NetworkPathKind.External),
+            new WinHttpRequestOptions(Url, (NetworkPathKind)999),
+            new WinHttpRequestOptions(Url, NetworkPathKind.External, (WinHttpRequestMethod)999),
+            new WinHttpRequestOptions(Url, NetworkPathKind.External, TimeoutMilliseconds: 999)
+        })
         {
             WinHttpRequestResult result = WinHttpRequestExecutor.Execute(options);
             Ensure(result.Status == WinHttpRequestStatus.InvalidRequest && result.Route is null && result.BytesReceived == 0,
@@ -384,6 +388,31 @@ internal static class Program
             "Pre-canceled requests must not resolve a proxy or start transport.");
     }
 
+    private static void LocalRouteAdmission()
+    {
+        foreach (char character in Enumerable.Range(0, 160).Select(value => (char)value).Where(char.IsControl))
+        {
+            foreach (string raw in new[] { character + "route.example.invalid", "route.example.invalid" + character,
+                         "route" + character + ".example.invalid", character.ToString() })
+            {
+                Ensure(!LocalRouteEvidenceReader.TryExtractHost(raw, out string host, out _) && host.Length == 0,
+                    "The Windows route adapter must not erase controls before calling the shared parser.");
+                _rawCases++;
+            }
+        }
+        foreach (string raw in new[] { "https://example.invalid/a%0d", "https://user:secret@example.invalid/", "host\u200B" })
+            Ensure(!LocalRouteEvidenceReader.TryExtractHost(raw, out _, out _), "Malformed route input must fail locally.");
+        Ensure(LocalRouteEvidenceReader.TryExtractHost("  route.example.invalid:8080  ", out string ordinary, out _)
+            && ordinary == "route.example.invalid", "Ordinary edge spaces and host:port remain supported.");
+        using CancellationTokenSource canceled = new();
+        canceled.Cancel();
+        DestinationRouteEvidence result = LocalRouteEvidenceReader.ReadAsync(
+            "route.example.invalid", "synthetic", RouteProbePurpose.InternalDirectTarget,
+            cancellationToken: canceled.Token).GetAwaiter().GetResult();
+        Ensure(result.Status == DestinationRouteEvidenceStatus.Canceled && !result.DnsWasUsed,
+            "Pre-cancellation must avoid DNS and report that it was not performed.");
+    }
+
     private static MeasurementTargetDefinition Target(string url = Url, NetworkPathKind path = NetworkPathKind.External) =>
         new(Name: "synthetic", Url: url, PathKind: path, RequireProxy: path == NetworkPathKind.External,
             RequireDirect: path == NetworkPathKind.Internal, MaxBytes: 1024 * 1024, TimeoutSeconds: 30,
@@ -399,7 +428,7 @@ internal static class Program
         catch (T exception) { return exception; }
         throw new InvalidOperationException($"Expected {typeof(T).Name}.");
     }
-    private static void Ensure(bool condition, string message)
+    private static void Ensure([DoesNotReturnIf(false)] bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
     }
