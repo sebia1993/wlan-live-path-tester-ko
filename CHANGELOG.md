@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### In progress — PR #130 (미병합·미배포)
+
+- URL·프록시·설정 JSON의 공통 원문 경계, 승인 catalog의 path/query 대소문자 구분 및 호스트 snapshot 보강
+- 일반 Windows 라우팅 reader를 선행 Trim 없는 공통 입력 검사에 연결하고, 사전 취소 시 DNS 미실행·native 반환 후 취소 재검사
+- Windows 프록시 importer에 OriginalString·PAC·수동 설정·bypass 원문 검사 연결
+- 수동/bypass 판정 오류를 버리고 원문에서 정상 프록시 후보를 다시 선택하던 경로 차단
+- 유효한 자동 판정에서 미사용 수동 설정 격리, 실패 후 재시도와 원래 consent·출처·동일 URL·5분 TTL 유지
+- InputBoundarySmoke의 nullable 컴파일 오류 수정 및 라우팅 그룹 추가: 총 27그룹
+- WindowsSmoke에 주입식 proxy import raw input 6그룹 추가; 실제 외부 DNS·PAC·HTTP 요청 없음
+- Release 검사에서 모든 독립 suite/audit 결과를 모으되 실패가 하나라도 있으면 throw하여 패키지 생성 차단
+- 소스 head `af25a677c8400d06fd1bdc5a0708058de9ca8ce7`: Windows/Guide CI 성공, Release Package CI 실패. solution build 경고/오류 0, 12/13 프로젝트 성공, InputBoundarySmoke 23/27 성공·4실패·1820 raw matrix assertion. 새 importer 6그룹과 라우팅 검사는 성공
+- 공통 helper의 port/bracket/blank-line/host 경계 보완 쓰기가 차단돼 네 실패 그룹을 유지. App·비교 coordinator·설정 파일 경로 연결도 남아 있어 #18 완료 및 main 병합으로 처리하지 않음
+- `docs/RAW_NETWORK_INPUT_AUDIT.md`와 `IMPLEMENTATION_STATUS.md`에 실제 성공·실패와 잔여 범위 기록. 고정 진행률 17/20=85% 유지, 패키지/공개 Release 미생성
+
 ### Added
 
 - 수동/불러온 판정 경로 비교·Windows 프록시 가져오기를 같은 진단 UI 수명에 연결
