@@ -27,8 +27,15 @@ public static class TargetValidator
         if (!Enum.IsDefined(target.PathKind))
             errors.Add("측정 경로 종류가 올바르지 않습니다.");
 
-        // Uri may normalize its input. Validate raw characters and length before
-        // constructing it or matching an approved target by its canonical key.
+        // Preserve the dedicated credential diagnostic even when the raw
+        // authority also resembles host:port syntax. No URI normalization is
+        // performed before this check.
+        if (ContainsUserInfoMarker(target.Url))
+        {
+            errors.Add("URL에 사용자 이름이나 비밀번호를 포함할 수 없습니다.");
+            return errors;
+        }
+
         if (!NetworkInputBoundary.TryHttpUri(target.Url, out Uri? uri, out string urlError))
         {
             errors.Add(urlError);
@@ -62,8 +69,6 @@ public static class TargetValidator
     public static bool IsLocalOrPrivate(IPAddress address)
     {
         ArgumentNullException.ThrowIfNull(address);
-        // Apply the same IPv4 ranges to ::ffff:a.b.c.d, rather than treating a
-        // mapped private address as an unrelated global IPv6 address.
         if (address.IsIPv4MappedToIPv6) return IsLocalOrPrivate(address.MapToIPv4());
         if (IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any)
             || address.Equals(IPAddress.IPv6Any) || address.IsIPv6LinkLocal
@@ -83,6 +88,17 @@ public static class TargetValidator
             || (bytes[0] == 192 && bytes[1] == 168)
             || (bytes[0] == 198 && bytes[1] is 18 or 19)
             || bytes[0] >= 224;
+    }
+
+    private static bool ContainsUserInfoMarker(string? raw)
+    {
+        string value = raw ?? string.Empty;
+        int separator = value.IndexOf("://", StringComparison.Ordinal);
+        if (separator < 0) return false;
+        int start = separator + 3;
+        int end = value.IndexOfAny(['/', '?', '#'], start);
+        if (end < 0) end = value.Length;
+        return start < end && value.AsSpan(start, end - start).IndexOf('@') >= 0;
     }
 
     private static void AddRuntimePolicyErrors(
