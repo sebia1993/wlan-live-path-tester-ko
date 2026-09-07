@@ -1,5 +1,17 @@
 # WLAN Live Path Tester KO
 
+**Windows 무선 단말에서 WLAN 상태·실제 NIC 경로·회사 프록시·다운로드 결과를 비교해 장애 조사 범위를 좁히는 한국어 도구입니다.**
+
+## 네트워크 엔지니어 포트폴리오 검토
+
+| 검토할 역량 | 확인할 근거 |
+|---|---|
+| 무선·유선·VPN·프록시를 구분하는 장애 접근 | [진단 순서와 측정 해석](docs/WIRELESS_GUIDED_DIAGNOSTICS.md), [측정 방법](docs/MEASUREMENT_METHOD.md) |
+| 운영 제약을 코드 경계로 표현 | [사례·코드·테스트 읽기 경로](docs/PORTFOLIO_KO.md), [네트워크 경계](docs/NETWORK_BOUNDARY.md) |
+| 재현 가능한 검증과 배포 | [Windows CI](https://github.com/sebia1993/wlan-live-path-tester-ko/actions/workflows/ci.yml), [공개 릴리스](https://github.com/sebia1993/wlan-live-path-tester-ko/releases) |
+
+장비 없이 시작하려면 [Core 합성 SelfTest](docs/PORTFOLIO_KO.md#장비-없이-재현하기)를 실행할 수 있습니다. CI는 실제 Aruba WLAN·회사 프록시·EDR/GPO 호환성이나 장애 원인 확정의 증거가 아닙니다.
+
 ## 시작하기
 
 alpha.12부터 공개 첨부는 **포터블 ZIP 하나**입니다. 모두 압축 해제한 뒤 `WlanLivePathTester.exe`를 실행하세요. 라이선스와 제3자 고지는 ZIP 안에 있습니다. 아래 과거 버전의 개별 EXE·체크섬 안내는 alpha.11까지의 배포 방식입니다.
