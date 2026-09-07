@@ -98,9 +98,9 @@ jobs:
           ### 배포물
 
           - WlanLivePathTester-win-x64-portable.zip: 호환성을 우선하는 권장 배포물
-          - THIRD_PARTY_NOTICES.md: 제3자 구성요소 고지
+          - 사용 안내·라이선스·제3자 고지는 ZIP 내부에 포함
 
-          두 실행 형태 모두 .NET 런타임을 포함하므로 Python 또는 별도 .NET 설치가 필요하지 않습니다. 관리자 권한도 요구하지 않습니다.
+          포터블 ZIP에 .NET 런타임을 포함하므로 Python 또는 별도 .NET 설치가 필요하지 않습니다. 관리자 권한도 요구하지 않습니다.
 
           ### 자동 검증
 
