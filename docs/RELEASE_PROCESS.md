@@ -11,7 +11,7 @@ SHA256SUMS.txt
 THIRD_PARTY_NOTICES.md
 ```
 
-일반 Pull Request에서는 바이너리 artifact를 업로드하지 않습니다. CI 안에서 패키지를 생성·검증한 뒤 작업 종료 시 폐기합니다.
+일반 Pull Request에서는 실행 바이너리 artifact를 업로드하지 않습니다. UI 검증용 합성 WPF 화면 PNG는 3일 보관 artifact로 제공할 수 있습니다. CI 안에서 패키지를 생성·검증한 뒤 작업 종료 시 폐기합니다.
 
 ## 버전 규칙
 

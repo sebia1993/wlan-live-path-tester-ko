@@ -167,6 +167,8 @@ try {
         'docs/TARGET_CONFIGURATION.md',
         'docs/ADMINISTRATOR_POLICY_VALIDATION.md',
         'docs/REPEATED_MEASUREMENT.md',
+        'docs/WIRELESS_GUIDED_DIAGNOSTICS.md',
+        'docs/RELEASE_NOTES_0.1.0-alpha.11.md',
         'docs/RELEASE_VALIDATION.md'
     )
     foreach ($requiredEntry in $requiredEntries) {

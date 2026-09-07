@@ -181,6 +181,7 @@ try {
         'docs\TARGET_CONFIGURATION.md',
         'docs\ADMINISTRATOR_POLICY_VALIDATION.md',
         'docs\REPEATED_MEASUREMENT.md',
+        'docs\WIRELESS_GUIDED_DIAGNOSTICS.md',
         'docs\RELEASE_VALIDATION.md'
     )
     foreach ($relativePath in $releaseDocuments) {

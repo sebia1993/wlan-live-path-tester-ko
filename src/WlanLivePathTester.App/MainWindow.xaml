@@ -82,7 +82,7 @@
                   <TextBlock Margin="0,7,0,0"
                              Foreground="#707B7C"
                              TextWrapping="Wrap"
-                             Text="Native WLAN API로 SSID, BSSID, RSSI, 채널, PHY와 Rx/Tx 링크 속도를 읽습니다. 외부 통신은 없습니다." />
+                             Text="연결된 Wi-Fi 이름과 AP, 신호 세기, 채널, 링크 속도를 확인합니다. 외부 사이트에는 접속하지 않습니다." />
                   <Button Width="170"
                           Margin="0,14,0,0"
                           Padding="10,7"

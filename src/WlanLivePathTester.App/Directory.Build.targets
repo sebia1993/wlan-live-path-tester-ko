@@ -1,5 +1,7 @@
 <Project>
   <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\WIRELESS_GUIDED_DIAGNOSTICS.md" Link="docs\WIRELESS_GUIDED_DIAGNOSTICS.md" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\docs\RELEASE_NOTES_0.1.0-alpha.11.md" Link="docs\RELEASE_NOTES_0.1.0-alpha.11.md" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\STRUCTURED_OBSERVATION_TERMINATION.md" Link="docs\STRUCTURED_OBSERVATION_TERMINATION.md" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\UNIFIED_OBSERVATION_TERMINATION_REPORTING.md" Link="docs\UNIFIED_OBSERVATION_TERMINATION_REPORTING.md" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\OBSERVATION_TERMINATION_FINDINGS.md" Link="docs\OBSERVATION_TERMINATION_FINDINGS.md" CopyToPublishDirectory="PreserveNewest" />
@@ -20,6 +22,8 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\docs\ROUTE_COMPARISON_REPORT_EXPORT.md" Link="docs\ROUTE_COMPARISON_REPORT_EXPORT.md" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="ValidateObservationGuidesInPublish" AfterTargets="Publish">
+    <Error Condition="!Exists('$(PublishDir)docs\WIRELESS_GUIDED_DIAGNOSTICS.md')" Text="Published output is missing WIRELESS_GUIDED_DIAGNOSTICS.md." />
+    <Error Condition="!Exists('$(PublishDir)docs\RELEASE_NOTES_0.1.0-alpha.11.md')" Text="Published output is missing RELEASE_NOTES_0.1.0-alpha.11.md." />
     <Error Condition="!Exists('$(PublishDir)docs\STRUCTURED_OBSERVATION_TERMINATION.md')" Text="Published output is missing STRUCTURED_OBSERVATION_TERMINATION.md." />
     <Error Condition="!Exists('$(PublishDir)docs\UNIFIED_OBSERVATION_TERMINATION_REPORTING.md')" Text="Published output is missing UNIFIED_OBSERVATION_TERMINATION_REPORTING.md." />
     <Error Condition="!Exists('$(PublishDir)docs\OBSERVATION_TERMINATION_FINDINGS.md')" Text="Published output is missing OBSERVATION_TERMINATION_FINDINGS.md." />
