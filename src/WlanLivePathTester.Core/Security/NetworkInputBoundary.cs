@@ -154,7 +154,7 @@ public static class NetworkInputBoundary
             error = "승인 호스트에는 DNS root dot을 한 개만 사용할 수 있습니다.";
             return false;
         }
-        if (value.EndsWith('.', StringComparison.Ordinal)) value = value[..^1];
+        if (value.EndsWith(".", StringComparison.Ordinal)) value = value[..^1];
         try
         {
             host = IPAddress.TryParse(value, out IPAddress? address)
@@ -194,7 +194,7 @@ public static class NetworkInputBoundary
             host = uri.IdnHost.Trim('[', ']');
             return true;
         }
-        if (value.StartsWith('[', StringComparison.Ordinal))
+        if (value.StartsWith("[", StringComparison.Ordinal))
         {
             int close = value.IndexOf(']');
             if (close <= 1 || value[1..close].Contains('[', StringComparison.Ordinal)
@@ -294,7 +294,7 @@ public static class NetworkInputBoundary
             error = "URL authority 형식이 올바르지 않습니다.";
             return false;
         }
-        if (authority.StartsWith('[', StringComparison.Ordinal))
+        if (authority.StartsWith("[", StringComparison.Ordinal))
         {
             int close = authority.IndexOf(']');
             if (close <= 1 || authority[1..close].Contains('[', StringComparison.Ordinal)
