@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Core.Proxy;
 using WlanLivePathTester.Core.Routing;
+using WlanLivePathTester.Core.Security;
 using WlanLivePathTester.Windows.Proxy;
 
 namespace WlanLivePathTester.App;
@@ -84,8 +85,6 @@ public partial class MainWindow
         return RunRouteUiOperationAsync(ApplicationOperationKind.WindowsProxyImport,
             async token =>
             {
-                // Only the owner may invalidate the previous import. A rejected
-                // click does not change the active operation or its result.
                 _importedRouteProxy = null;
                 token.ThrowIfCancellationRequested();
                 return importer is not null
@@ -123,7 +122,7 @@ public partial class MainWindow
             UpdateRouteProxyImportControls();
             return Task.FromResult(false);
         }
-        string internalTarget = _routeComparisonInternalTargetV3?.Text.Trim() ?? string.Empty;
+        string internalTarget = _routeComparisonInternalTargetV3?.Text ?? string.Empty;
         long revision = _routeProxyTargetRevision;
         var runner = CompareImportedRouteOverride;
         return RunRouteUiOperationAsync<InternalProxyRouteComparisonRunResult?>(ApplicationOperationKind.RouteComparison,
@@ -134,8 +133,6 @@ public partial class MainWindow
                 if (runner is not null) return await runner(internalTarget, selection, target, token);
                 string? wlan = await Task.Run(ReadCurrentWlanInterfaceIdV3, token);
                 token.ThrowIfCancellationRequested();
-                // Recheck TTL after the native WLAN read, and preserve the
-                // imported TargetSpecificAutoProxy / Manual provenance.
                 if (!imported.TryGetSelection(target, out selection)) return null;
                 return await _routeComparisonCoordinatorV3.RunAsync(internalTarget, selection,
                     target, wlan, dnsTimeoutSeconds: 5, cancellationToken: token);
@@ -152,8 +149,11 @@ public partial class MainWindow
             });
     }
 
-    private Uri? ReadRouteProxyTarget() =>
-        Uri.TryCreate(_routeComparisonExternalTargetV3?.Text, UriKind.Absolute, out Uri? target) ? target : null;
+    private Uri? ReadRouteProxyTarget()
+    {
+        string raw = _routeComparisonExternalTargetV3?.Text ?? string.Empty;
+        return NetworkInputBoundary.TryHttpUri(raw, out Uri? target, out _) ? target : null;
+    }
 
     private void OnRouteProxyTargetChanged(object sender, TextChangedEventArgs e)
     {
