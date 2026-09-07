@@ -9,10 +9,42 @@ internal static class GuidedNavigationTests
 {
     internal static readonly (string Name, Func<Task> Run)[] Cases =
     [
+        ("guided production layouts render at supported window sizes", RenderAsync),
         ("guided stages reuse production tools without starting collectors", StagesAsync),
         ("guided navigation cannot escape a running diagnostic lease", BusyAsync),
         ("guided and advanced views preserve inputs and separate wireless from proxy", AdvancedAsync)
     ];
+
+    private static Task RenderAsync()
+    {
+        string? directory = Environment.GetEnvironmentVariable("WLAN_GUIDED_RENDER_DIRECTORY");
+        if (string.IsNullOrWhiteSpace(directory)) return Task.CompletedTask;
+        Directory.CreateDirectory(directory);
+        MainWindow window = Prepare();
+        try
+        {
+            foreach (int width in new[] { 1080, 1280 })
+            {
+                for (int step = 0; step < 5; step++)
+                {
+                    Ensure(window.NavigateGuidedStep(step), "Cannot render a missing stage.");
+                    FrameworkElement root = (FrameworkElement)window.Content;
+                    root.Measure(new Size(width, 800));
+                    root.Arrange(new Rect(0, 0, width, 800));
+                    root.UpdateLayout();
+                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                        width, 800, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                    bitmap.Render(root);
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                    using var output = File.Create(Path.Combine(directory, $"stage-{step + 1}-{width}.png"));
+                    encoder.Save(output);
+                }
+            }
+        }
+        finally { window.Close(); }
+        return Task.CompletedTask;
+    }
 
     private static Task StagesAsync()
     {

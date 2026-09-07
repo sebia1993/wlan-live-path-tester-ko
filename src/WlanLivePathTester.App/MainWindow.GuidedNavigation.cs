@@ -66,6 +66,13 @@ public partial class MainWindow
             default: header = "WLAN · 프록시"; break;
         }
         if (!SelectGuidedTool(header)) return false;
+        _updatingGuidedTools = true;
+        try
+        {
+            GuidedAdvanced.IsChecked = false;
+            GuidedAdvancedTools.Visibility = Visibility.Collapsed;
+        }
+        finally { _updatingGuidedTools = false; }
         _guidedStep = step;
         GuidedTitle.Text = GuidedTitles[step];
         GuidedQuestion.Text = GuidedQuestions[step];
@@ -127,7 +134,7 @@ public partial class MainWindow
 
     private void OnGuidedAdvancedChanged(object sender, RoutedEventArgs e)
     {
-        if (DiagnosticTabs is null || GuidedAdvancedTools is null) return;
+        if (_updatingGuidedTools || DiagnosticTabs is null || GuidedAdvancedTools is null) return;
         if (!CanNavigateGuided())
         {
             // Return the checkbox to the current view without changing active controls.
@@ -162,7 +169,14 @@ public partial class MainWindow
         {
             GuidedTitle.Text = "고급 도구 · " + header;
             GuidedQuestion.Text = "개별 기능을 직접 실행합니다. 기본 진단으로 돌아가려면 왼쪽 단계를 선택하세요.";
+            GuidedLimitation.Text = "개별 기능의 수집 시각과 한계를 확인하세요. 서로 다른 시각의 결과를 동일 조건의 측정으로 해석하지 마세요.";
             GuidedChoices.Children.Clear();
+        }
+        else
+        {
+            _updatingGuidedTools = true;
+            try { GuidedAdvancedTools.SelectedItem = (DiagnosticTabs.SelectedItem as TabItem)?.Header?.ToString(); }
+            finally { _updatingGuidedTools = false; }
         }
     }
 
