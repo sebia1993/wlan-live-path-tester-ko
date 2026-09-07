@@ -4,6 +4,7 @@ using System.Windows.Media;
 using WlanLivePathTester.Core.Measurements;
 using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Core.Operations;
+using WlanLivePathTester.Core.Security;
 using WlanLivePathTester.Core.Wlan;
 using WlanLivePathTester.Windows.Measurements;
 using WlanLivePathTester.Windows.Proxy;
@@ -33,7 +34,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        string url = ProxyTargetUrlTextBox.Text.Trim();
+        string url = ProxyTargetUrlTextBox.Text;
         NetworkPathKind expectedPath = ProxyExpectedPathComboBox.SelectedIndex == 1
             ? NetworkPathKind.Internal
             : NetworkPathKind.External;
@@ -46,8 +47,6 @@ public partial class MainWindow : Window
 
         try
         {
-            // The existing native resolver is synchronous and is not aborted
-            // by disposing a UI lease. Closing waits for its actual return.
             ProxyRouteResolution result = await Task.Run(
                 () => ProxyRouteResolver.Resolve(url, expectedPath));
 
@@ -96,7 +95,6 @@ public partial class MainWindow : Window
 
     private async void OnStartInternalMeasurementClick(object sender, RoutedEventArgs e)
     {
-        string url = InternalTargetUrlTextBox.Text.Trim();
         if (!TryReadMeasurementSettings(
                 out long maxBytes,
                 out int timeoutSeconds,
@@ -108,9 +106,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!NetworkInputBoundary.TryHttpUri(
+                InternalTargetUrlTextBox.Text,
+                out Uri? normalizedUri,
+                out string urlError))
+        {
+            ShowMeasurementInputError(InternalMeasurementResultText, urlError);
+            return;
+        }
+
         MeasurementTargetDefinition target = new(
             Name: "내부망 기준 대상",
-            Url: url,
+            Url: normalizedUri.OriginalString,
             PathKind: NetworkPathKind.Internal,
             RequireProxy: false,
             RequireDirect: true,
@@ -149,16 +156,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        string[] urls = ExternalTargetUrlsTextBox.Text
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (urls.Length is < 1 or > 4)
+        if (!NetworkInputBoundary.TryHttpUrlLines(
+                ExternalTargetUrlsTextBox.Text,
+                out string[] urls,
+                out string listError))
         {
-            ShowMeasurementInputError(
-                ExternalMeasurementResultText,
-                "외부 URL을 한 줄에 하나씩 1~4개 입력하십시오.");
+            ShowMeasurementInputError(ExternalMeasurementResultText, listError);
             return;
         }
 

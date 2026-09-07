@@ -5,6 +5,7 @@ using WlanLivePathTester.Core.Models;
 using WlanLivePathTester.Core.Operations;
 using WlanLivePathTester.Core.Reporting;
 using WlanLivePathTester.Core.Routing;
+using WlanLivePathTester.Core.Security;
 using WlanLivePathTester.Windows.Routing;
 using WlanLivePathTester.Windows.Wlan;
 
@@ -123,11 +124,11 @@ public partial class MainWindow
     internal Task<bool> RunManualRouteComparisonAsync()
     {
         Dispatcher.VerifyAccess();
-        string internalTarget = _routeComparisonInternalTargetV3?.Text.Trim() ?? string.Empty;
-        string externalTargetText = _routeComparisonExternalTargetV3?.Text.Trim() ?? string.Empty;
-        // Preserve raw length and edge control characters for Core validation.
+        string internalTarget = _routeComparisonInternalTargetV3?.Text ?? string.Empty;
+        string externalRaw = _routeComparisonExternalTargetV3?.Text ?? string.Empty;
         string proxyDirective = _routeComparisonProxyDirectiveV3?.Text ?? string.Empty;
-        Uri? externalTarget = Uri.TryCreate(externalTargetText, UriKind.Absolute, out Uri? parsed) ? parsed : null;
+        Uri? externalTarget = NetworkInputBoundary.TryHttpUri(externalRaw, out Uri? parsed, out _)
+            ? parsed : null;
         var runner = CompareManualRouteOverride;
         return RunRouteUiOperationAsync(ApplicationOperationKind.RouteComparison,
             async token =>
@@ -166,7 +167,6 @@ public partial class MainWindow
         if (_routeComparisonInternalTargetV3 is not null) _routeComparisonInternalTargetV3.IsEnabled = !isBusy;
         if (_routeComparisonExternalTargetV3 is not null) _routeComparisonExternalTargetV3.IsEnabled = !isBusy;
         if (_routeComparisonProxyDirectiveV3 is not null) _routeComparisonProxyDirectiveV3.IsEnabled = !isBusy;
-        // Peer tabs and their bindings are owned exclusively by the UI lease.
     }
 
     private void SetRouteComparisonResultV3(string text, Brush brush)

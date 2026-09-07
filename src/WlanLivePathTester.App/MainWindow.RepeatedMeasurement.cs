@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using WlanLivePathTester.Core.Measurements;
 using WlanLivePathTester.Core.Models;
+using WlanLivePathTester.Core.Security;
 using WlanLivePathTester.Windows.Measurements;
 
 namespace WlanLivePathTester.App;
@@ -292,21 +293,33 @@ public partial class MainWindow
             error = string.Join(" ", planErrors);
             return false;
         }
-        string[] urls = pathKind == NetworkPathKind.Internal
-            ? [InternalTargetUrlTextBox.Text.Trim()]
-            : ExternalTargetUrlsTextBox.Text.Split(['\r', '\n'],
-                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (pathKind == NetworkPathKind.Internal && string.IsNullOrWhiteSpace(urls[0]))
+
+        string[] urls;
+        if (pathKind == NetworkPathKind.Internal)
         {
-            error = "내부 측정 화면에 기준 URL을 입력하거나 승인 대상에서 적용하십시오.";
+            if (!NetworkInputBoundary.TryHttpUri(InternalTargetUrlTextBox.Text,
+                    out Uri? internalUri, out string urlError))
+            {
+                error = $"입력 오류: {urlError}";
+                return false;
+            }
+            urls = [internalUri.OriginalString];
+        }
+        else if (pathKind == NetworkPathKind.External)
+        {
+            if (!NetworkInputBoundary.TryHttpUrlLines(ExternalTargetUrlsTextBox.Text,
+                    out urls, out string listError))
+            {
+                error = $"입력 오류: {listError}";
+                return false;
+            }
+        }
+        else
+        {
+            error = "입력 오류: 반복 측정 경로 종류가 올바르지 않습니다.";
             return false;
         }
-        if (pathKind == NetworkPathKind.External && urls.Length is < 1 or > 4)
-        {
-            error = "외부 측정 화면에 URL을 한 줄에 하나씩 1~4개 입력하거나 승인 대상에서 적용하십시오.";
-            return false;
-        }
+
         targets = urls.Select((url, index) => new MeasurementTargetDefinition(
             Name: pathKind == NetworkPathKind.Internal ? "내부망 반복 대상" : $"외부 반복 대상 {index + 1}",
             Url: url, PathKind: pathKind,

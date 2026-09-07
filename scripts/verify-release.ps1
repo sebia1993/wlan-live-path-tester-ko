@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $solution = Join-Path $root 'WlanLivePathTester.sln'
 $tests = @(
+    'tests\WlanLivePathTester.InputBoundarySmoke\WlanLivePathTester.InputBoundarySmoke.csproj',
     'tests\WlanLivePathTester.SelfTest\WlanLivePathTester.SelfTest.csproj',
     'tests\WlanLivePathTester.WindowsSmoke\WlanLivePathTester.WindowsSmoke.csproj',
     'tests\WlanLivePathTester.ProxyAuthSmoke\WlanLivePathTester.ProxyAuthSmoke.csproj',
@@ -55,6 +56,10 @@ try {
         powershell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'scripts\test-route-report-save-ui-contract.ps1')
     }
+    Invoke-CheckedCommand -Description 'Validate raw network input wiring contract' -Command {
+        powershell -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $root 'scripts\test-raw-network-input-wiring.ps1')
+    }
     Invoke-CheckedCommand -Description 'Validate diagnostic guide package negative cases' -Command {
         powershell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'scripts\test-diagnostic-guide-package-cases.ps1')
@@ -63,21 +68,42 @@ try {
     Invoke-CheckedCommand -Description 'Build solution' -Command {
         dotnet build $solution -c $Configuration --no-restore
     }
+
+    $failures = [System.Collections.Generic.List[string]]::new()
+    $passedCount = 0
     foreach ($relativeProject in $tests) {
-        $project = Join-Path $root $relativeProject
-        if (-not (Test-Path -LiteralPath $project -PathType Leaf)) {
-            throw "Required smoke-test project not found: $relativeProject"
+        try {
+            $project = Join-Path $root $relativeProject
+            if (-not (Test-Path -LiteralPath $project -PathType Leaf)) {
+                throw "Required smoke-test project not found: $relativeProject"
+            }
+            Invoke-CheckedCommand -Description "Restore $relativeProject" -Command { dotnet restore $project }
+            Invoke-CheckedCommand -Description "Run $relativeProject" -Command {
+                dotnet run --project $project -c $Configuration --no-restore
+            }
+            $passedCount++
         }
-        Invoke-CheckedCommand -Description "Restore $relativeProject" -Command { dotnet restore $project }
-        Invoke-CheckedCommand -Description "Run $relativeProject" -Command {
-            dotnet run --project $project -c $Configuration --no-restore
+        catch {
+            $failures.Add($relativeProject)
+            Write-Host "FAILED SUITE: $relativeProject" -ForegroundColor Red
+            Write-Host $_.Exception.Message -ForegroundColor Red
         }
     }
-    Invoke-CheckedCommand -Description 'Audit repository' -Command {
-        powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts\audit-repository.ps1')
+    foreach ($audit in @('audit-repository.ps1', 'audit-network-boundary.ps1')) {
+        try {
+            Invoke-CheckedCommand -Description "Audit $audit" -Command {
+                powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot $audit)
+            }
+        }
+        catch {
+            $failures.Add($audit)
+            Write-Host "FAILED AUDIT: $audit" -ForegroundColor Red
+            Write-Host $_.Exception.Message -ForegroundColor Red
+        }
     }
-    Invoke-CheckedCommand -Description 'Audit network boundary' -Command {
-        powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts\audit-network-boundary.ps1')
+    Write-Host "Smoke suite summary: $passedCount/$($tests.Count) passed; total failed suites/audits: $($failures.Count)."
+    if ($failures.Count -gt 0) {
+        throw "Release verification failed; packaging is blocked. Failed checks: $($failures -join '; ')"
     }
     Write-Host 'Release verification passed.' -ForegroundColor Green
 }
