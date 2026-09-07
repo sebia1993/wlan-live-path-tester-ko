@@ -52,8 +52,6 @@ public static class NetworkInputBoundary
                 return false;
             }
         }
-        // Only ordinary edge spaces are presentation whitespace. Never erase
-        // tabs, control-only values or excess raw length before validation.
         normalized = value.Trim(' ');
         if (!allowEmpty && normalized.Length == 0)
         {
@@ -68,18 +66,23 @@ public static class NetworkInputBoundary
         uri = null;
         if (!TryUriReference(raw, out string value, out error)) return false;
         if (!(value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            || !Uri.TryCreate(value, UriKind.Absolute, out Uri? parsed)
-            || parsed.Scheme is not ("http" or "https")
-            || string.IsNullOrEmpty(parsed.Host) || parsed.Port is < 1 or > 65535)
+                || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
         {
             error = "호스트와 유효한 포트를 포함한 절대 HTTP 또는 HTTPS URL이 필요합니다.";
             return false;
         }
         int authorityStart = value.IndexOf("://", StringComparison.Ordinal) + 3;
         int authorityEnd = value.IndexOfAny(['/', '?', '#'], authorityStart);
-        ReadOnlySpan<char> authority = value.AsSpan(authorityStart,
+        string authority = value.Substring(authorityStart,
             (authorityEnd < 0 ? value.Length : authorityEnd) - authorityStart);
+        if (!TryValidateAuthoritySyntax(authority, out error)) return false;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? parsed)
+            || parsed.Scheme is not ("http" or "https")
+            || string.IsNullOrEmpty(parsed.Host) || parsed.Port is < 1 or > 65535)
+        {
+            error = "호스트와 유효한 포트를 포함한 절대 HTTP 또는 HTTPS URL이 필요합니다.";
+            return false;
+        }
         if (!string.IsNullOrEmpty(parsed.UserInfo) || authority.Contains('@'))
         {
             error = "URL에 사용자 이름이나 비밀번호를 포함할 수 없습니다.";
@@ -90,8 +93,6 @@ public static class NetworkInputBoundary
             error = "URL fragment는 사용할 수 없습니다.";
             return false;
         }
-        // Escaped hosts and IPv6 scope identifiers are not accepted as HTTP
-        // destinations. Route-only literal scope handling is separate below.
         if (authority.Contains('%') || parsed.IdnHost.Length > MaximumHostLength)
         {
             error = "URL 호스트 형식 또는 길이가 허용 범위를 벗어납니다.";
@@ -148,7 +149,12 @@ public static class NetworkInputBoundary
             error = "승인 호스트에는 스킴·포트·경로 없는 정확한 DNS 이름 또는 IPv4 주소만 사용할 수 있습니다.";
             return false;
         }
-        value = value.TrimEnd('.');
+        if (value.EndsWith("..", StringComparison.Ordinal))
+        {
+            error = "승인 호스트에는 DNS root dot을 한 개만 사용할 수 있습니다.";
+            return false;
+        }
+        if (value.EndsWith('.', StringComparison.Ordinal)) value = value[..^1];
         try
         {
             host = IPAddress.TryParse(value, out IPAddress? address)
@@ -182,17 +188,45 @@ public static class NetworkInputBoundary
     {
         host = string.Empty;
         if (!TrySingleLine(raw, MaximumUrlLength, out string value, out error)) return false;
-        string literal = value.StartsWith('[') && value.EndsWith(']')
-            ? value[1..^1] : value;
-        if (IPAddress.TryParse(literal, out IPAddress? address))
-        {
-            host = address.ToString();
-            return true;
-        }
         if (value.Contains("://", StringComparison.Ordinal))
         {
             if (!TryHttpUri(value, out Uri? uri, out error)) return false;
             host = uri.IdnHost.Trim('[', ']');
+            return true;
+        }
+        if (value.StartsWith('[', StringComparison.Ordinal))
+        {
+            int close = value.IndexOf(']');
+            if (close <= 1 || value[1..close].Contains('[', StringComparison.Ordinal)
+                || value[(close + 1)..].Contains('[', StringComparison.Ordinal)
+                || value[(close + 1)..].Contains(']', StringComparison.Ordinal))
+            {
+                error = "IPv6 주소의 대괄호 형식이 올바르지 않습니다.";
+                return false;
+            }
+            string literal = value[1..close];
+            if (!IPAddress.TryParse(literal, out IPAddress? bracketed) || !literal.Contains(':'))
+            {
+                error = "IPv6 주소가 올바르지 않습니다.";
+                return false;
+            }
+            string suffix = value[(close + 1)..];
+            if (suffix.Length != 0 && (suffix[0] != ':' || !TryPort(suffix.AsSpan(1))))
+            {
+                error = "호스트의 명시적 포트가 올바르지 않습니다.";
+                return false;
+            }
+            host = bracketed.ToString();
+            return true;
+        }
+        if (value.Contains('[', StringComparison.Ordinal) || value.Contains(']', StringComparison.Ordinal))
+        {
+            error = "IPv6 주소의 대괄호 형식이 올바르지 않습니다.";
+            return false;
+        }
+        if (IPAddress.TryParse(value, out IPAddress? address))
+        {
+            host = address.ToString();
             return true;
         }
         if (value.IndexOfAny(['/', '\\', '?', '#', '@', '%']) >= 0
@@ -220,8 +254,14 @@ public static class NetworkInputBoundary
         string[] lines = raw.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
         for (int index = 0; index < lines.Length; index++)
         {
-            if (lines[index].All(character => character == ' ')) continue;
-            if (!TryHttpUri(lines[index], out Uri? uri, out string lineError))
+            string line = lines[index];
+            if (line.Length > MaximumUrlLength)
+            {
+                error = $"URL 목록 {index + 1}번째 줄의 원문은 {MaximumUrlLength}자 이하여야 합니다.";
+                return false;
+            }
+            if (line.All(character => character == ' ')) continue;
+            if (!TryHttpUri(line, out Uri? uri, out string lineError))
             {
                 error = $"URL 목록 {index + 1}번째 줄: {lineError}";
                 return false;
@@ -245,6 +285,58 @@ public static class NetworkInputBoundary
     public static string CreateHttpKey(Uri uri) =>
         uri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped).ToLowerInvariant()
         + uri.GetComponents(UriComponents.PathAndQuery, UriFormat.UriEscaped);
+
+    private static bool TryValidateAuthoritySyntax(string authority, out string error)
+    {
+        error = string.Empty;
+        if (authority.Length == 0 || authority.Any(char.IsWhiteSpace))
+        {
+            error = "URL authority 형식이 올바르지 않습니다.";
+            return false;
+        }
+        if (authority.StartsWith('[', StringComparison.Ordinal))
+        {
+            int close = authority.IndexOf(']');
+            if (close <= 1 || authority[1..close].Contains('[', StringComparison.Ordinal)
+                || authority[(close + 1)..].Contains('[', StringComparison.Ordinal)
+                || authority[(close + 1)..].Contains(']', StringComparison.Ordinal))
+            {
+                error = "IPv6 URL 대괄호 형식이 올바르지 않습니다.";
+                return false;
+            }
+            string suffix = authority[(close + 1)..];
+            if (suffix.Length != 0 && (suffix[0] != ':' || !TryPort(suffix.AsSpan(1))))
+            {
+                error = "URL의 명시적 포트가 올바르지 않습니다.";
+                return false;
+            }
+            return true;
+        }
+        if (authority.Contains('[', StringComparison.Ordinal) || authority.Contains(']', StringComparison.Ordinal))
+        {
+            error = "URL의 대괄호 형식이 올바르지 않습니다.";
+            return false;
+        }
+        int colon = authority.LastIndexOf(':');
+        if (colon >= 0 && (colon == 0 || authority[..colon].Contains(':') || !TryPort(authority.AsSpan(colon + 1))))
+        {
+            error = "URL의 명시적 포트가 올바르지 않습니다.";
+            return false;
+        }
+        return true;
+    }
+
+    private static bool TryPort(ReadOnlySpan<char> value)
+    {
+        if (value.Length == 0 || value.Length > 5) return false;
+        int port = 0;
+        foreach (char character in value)
+        {
+            if (character is < '0' or > '9') return false;
+            port = port * 10 + character - '0';
+        }
+        return port is >= 1 and <= 65535;
+    }
 
     private static bool TryHex(char value, out int digit)
     {
