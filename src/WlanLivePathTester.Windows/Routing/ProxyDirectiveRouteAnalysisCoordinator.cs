@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using WlanLivePathTester.Core.Proxy;
 using WlanLivePathTester.Core.Routing;
+using WlanLivePathTester.Core.Security;
 
 namespace WlanLivePathTester.Windows.Routing;
 
@@ -21,32 +22,26 @@ public sealed class ProxyDirectiveRouteAnalysisCoordinator
             ?? throw new ArgumentNullException(nameof(routeAnalyzer));
     }
 
-    public Task<ProxyDirectiveRouteAnalysisExecutionResult<
-        ProxyEndpointRouteAnalysisResult>> ExecuteAsync(
-            ProxyDirectiveSourceSnapshot snapshot,
-            Uri targetUri,
-            string? expectedWlanInterfaceId,
-            int dnsTimeoutSeconds = 5,
-            CancellationToken cancellationToken = default)
+    public Task<ProxyDirectiveRouteAnalysisExecutionResult<ProxyEndpointRouteAnalysisResult>> ExecuteAsync(
+        ProxyDirectiveSourceSnapshot snapshot,
+        Uri targetUri,
+        string? expectedWlanInterfaceId,
+        int dnsTimeoutSeconds = 5,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ProxyDirectiveSourceSelectionResult selection =
             ProxyDirectiveSourceSnapshotSelectionPolicy.Select(snapshot);
-        return ExecuteAsync(
-            selection,
-            targetUri,
-            expectedWlanInterfaceId,
-            dnsTimeoutSeconds,
-            cancellationToken);
+        return ExecuteAsync(selection, targetUri, expectedWlanInterfaceId,
+            dnsTimeoutSeconds, cancellationToken);
     }
 
-    public Task<ProxyDirectiveRouteAnalysisExecutionResult<
-        ProxyEndpointRouteAnalysisResult>> ExecuteAsync(
-            ProxyDirectiveSourceSelectionResult selection,
-            Uri targetUri,
-            string? expectedWlanInterfaceId,
-            int dnsTimeoutSeconds = 5,
-            CancellationToken cancellationToken = default)
+    public Task<ProxyDirectiveRouteAnalysisExecutionResult<ProxyEndpointRouteAnalysisResult>> ExecuteAsync(
+        ProxyDirectiveSourceSelectionResult selection,
+        Uri targetUri,
+        string? expectedWlanInterfaceId,
+        int dnsTimeoutSeconds = 5,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(selection);
         ValidateTargetUri(targetUri);
@@ -62,9 +57,7 @@ public sealed class ProxyDirectiveRouteAnalysisCoordinator
             async (directiveText, token) =>
             {
                 ProxyEndpointParseResult parsed =
-                    ProxyEndpointParser.Parse(
-                        directiveText,
-                        targetUri);
+                    ProxyEndpointParser.Parse(directiveText, targetUri);
                 return await _routeAnalyzer.AnalyzeAsync(
                         parsed,
                         expectedWlanInterfaceId,
@@ -78,16 +71,10 @@ public sealed class ProxyDirectiveRouteAnalysisCoordinator
     private static void ValidateTargetUri(Uri targetUri)
     {
         ArgumentNullException.ThrowIfNull(targetUri);
-        if (!targetUri.IsAbsoluteUri
-            || (!targetUri.Scheme.Equals(
-                    Uri.UriSchemeHttp,
-                    StringComparison.OrdinalIgnoreCase)
-                && !targetUri.Scheme.Equals(
-                    Uri.UriSchemeHttps,
-                    StringComparison.OrdinalIgnoreCase)))
+        if (!NetworkInputBoundary.IsHttpUri(targetUri, out _))
         {
             throw new ArgumentException(
-                "프록시 경로 분석 대상은 절대 HTTP 또는 HTTPS URL이어야 합니다.",
+                "프록시 경로 분석 대상은 사용자 정보·fragment·제어 문자 없는 절대 HTTP 또는 HTTPS URL이어야 합니다.",
                 nameof(targetUri));
         }
     }
