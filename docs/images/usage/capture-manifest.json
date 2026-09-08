@@ -1,0 +1,29 @@
+{
+  "source_commit": "479c613acf8bdd0d3d5eeebff15f843c840535ab",
+  "capture_os": "GitHub Actions windows-latest",
+  "workflow_run": 34175245691,
+  "method": "Production MainWindow VisualTree rendered by existing GuidedNavigationTests.RenderAsync at 1280x800. Native startup/collectors disabled by TestContext.Prepare. No live measurement.",
+  "data": "Initial unmeasured state and reserved .invalid test inputs",
+  "images": [
+    {
+      "file": "01-guided-step.png",
+      "sha256": "727b352a48291228442567f8507f7940750252d558be2fcbc8a118b965f3ed10"
+    },
+    {
+      "file": "02-guided-step.png",
+      "sha256": "8a755c02ead4ad8a38fedc2eeeb6687643d5bfc93f3948b0fe9c05ecf31f505d"
+    },
+    {
+      "file": "03-guided-step.png",
+      "sha256": "d469c51cfacc2eb7754a7d93d6b439e60de1164db2aa79fba67db4ae54f8e5b0"
+    },
+    {
+      "file": "04-guided-step.png",
+      "sha256": "e7e2944bab01bcc9166c756eadd1e6ed454799497475d274b294ba061b0841a6"
+    },
+    {
+      "file": "05-guided-step.png",
+      "sha256": "f2ca58f7a6c97524a78f36d625aee1320497061456dae65499200e0d1912815e"
+    }
+  ]
+}
