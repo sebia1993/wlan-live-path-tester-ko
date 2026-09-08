@@ -12,6 +12,16 @@
 
 장비 없이 시작하려면 [Core 합성 SelfTest](docs/PORTFOLIO_KO.md#장비-없이-재현하기)를 실행할 수 있습니다. CI는 실제 Aruba WLAN·회사 프록시·EDR/GPO 호환성이나 장애 원인 확정의 증거가 아닙니다.
 
+## 화면으로 보는 진단 흐름
+
+아래는 **실제 WPF 앱을 Windows CI에서 렌더한 측정 전 화면**입니다. 실장비 관측 결과가 아니며 `미실행`은 정상 판정을 뜻하지 않습니다.
+
+![무선 진단을 시작하는 실제 WPF 화면](docs/images/usage/01-guided-step.png)
+
+![미실행과 확인하지 못한 항목을 구분하는 결과·보고서 화면](docs/images/usage/05-guided-step.png)
+
+[5단계 화면 안내](docs/USAGE_SCREENSHOTS_KO.md)에서 **무선 연결 → IP·실제 경로 → 프록시·서비스 → 승인 대상 성능 비교 → 결과·보고서** 순서의 버튼, 읽을 값, 다음 점검과 캡처 출처를 확인할 수 있습니다.
+
 ## 시작하기
 
 alpha.12부터 공개 첨부는 **포터블 ZIP 하나**입니다. 모두 압축 해제한 뒤 `WlanLivePathTester.exe`를 실행하세요. 라이선스와 제3자 고지는 ZIP 안에 있습니다. 아래 과거 버전의 개별 EXE·체크섬 안내는 alpha.11까지의 배포 방식입니다.
